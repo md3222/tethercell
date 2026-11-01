@@ -298,11 +298,13 @@ func (d *Device) BulkRead(buf []byte, timeout time.Duration) (int, error) {
 		Timeout: uint32(timeout / time.Millisecond),
 		Data:    uintptr(unsafe.Pointer(&buf[0])),
 	}
-	_, _, e := syscall.Syscall(syscall.SYS_IOCTL, d.f.Fd(), ioctlBulk, uintptr(unsafe.Pointer(&t)))
+	// USBDEVFS_BULK returns the bytes actually transferred as the ioctl result; t.Len is only the
+	// requested size. (Returning t.Len handed the parser ~16 KB of stale buffer after every packet.)
+	r, _, e := syscall.Syscall(syscall.SYS_IOCTL, d.f.Fd(), ioctlBulk, uintptr(unsafe.Pointer(&t)))
 	if e != 0 {
 		return 0, fmt.Errorf("usbdev: bulk in: %w", e)
 	}
-	return int(t.Len), nil
+	return int(r), nil
 }
 
 // BulkWrite writes to the OUT endpoint.
@@ -316,11 +318,11 @@ func (d *Device) BulkWrite(data []byte, timeout time.Duration) (int, error) {
 		Timeout: uint32(timeout / time.Millisecond),
 		Data:    uintptr(unsafe.Pointer(&data[0])),
 	}
-	_, _, e := syscall.Syscall(syscall.SYS_IOCTL, d.f.Fd(), ioctlBulk, uintptr(unsafe.Pointer(&t)))
+	r, _, e := syscall.Syscall(syscall.SYS_IOCTL, d.f.Fd(), ioctlBulk, uintptr(unsafe.Pointer(&t)))
 	if e != 0 {
 		return 0, fmt.Errorf("usbdev: bulk out: %w", e)
 	}
-	return int(t.Len), nil
+	return int(r), nil // actual bytes written
 }
 
 // Close closes the handle.
