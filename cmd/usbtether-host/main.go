@@ -42,6 +42,7 @@ func main() {
 	v6 := flag.Bool("v6", false, "also give the TUN a ULA IPv6 address (and a v6 default route with -route)")
 	deadAfter := flag.Duration("dead-after", 10*time.Second, "declare the tunnel dead if data was sent and no valid packet came back for this long")
 	wedgeAfter := flag.Duration("wedge-after", 6*time.Second, "declare the tunnel dead if every USB write has timed out for this long")
+	clearHalt := flag.Bool("clear-halt", true, "CLEAR_HALT both bulk endpoints on attach (resets data toggles)")
 	reuse := flag.Bool("reuse", false, "attach to a phone already in accessory mode (our identity) instead of requiring a replug")
 	probe := flag.String("probe-profile", "", "DIAGNOSTIC: 'tetrd' sends the stock app identity to test whether the phone switches at all")
 	wait := flag.Duration("wait", 20*time.Second, "wait for the accessory to enumerate")
@@ -62,6 +63,9 @@ func main() {
 	log.Printf("accessory %04x:%04x in=%#x out=%#x", dev.Info.VID, dev.Info.PID, dev.In, dev.Out)
 	// Reset both bulk endpoints (halt + data toggles) so a -reuse attach starts from a clean state.
 	for _, ep := range []uint8{dev.In, dev.Out} {
+		if !*clearHalt {
+			break
+		}
 		if err := dev.ClearHalt(ep); err != nil {
 			log.Printf("clear halt %#x: %v (continuing)", ep, err)
 		}
@@ -141,15 +145,31 @@ func main() {
 	go func() { errc <- tunToUSB(dev, td, stop) }()
 
 	go func() { // watchdog: data out but nothing back for too long = dead tunnel, give routes back
+		var lastProbe time.Time
+		var probeSeq uint16
 		for {
 			select {
 			case <-stop:
 				return
-			case <-time.After(2 * time.Second):
+			case <-time.After(1 * time.Second):
 			}
-			if t := unanswered.Load(); t != 0 && time.Since(time.Unix(0, t)) > *deadAfter {
-				errc <- fmt.Errorf("no data from phone for %s while sending", *deadAfter)
-				return
+			if t := unanswered.Load(); t != 0 {
+				pending := time.Since(time.Unix(0, t))
+				if pending > *deadAfter {
+					errc <- fmt.Errorf("no valid packet from phone for %s (probes unanswered)", *deadAfter)
+					return
+				}
+				// A pure ACK never gets a reply, so silence alone proves nothing: after 3 s, ask the
+				// phone directly. Its pingV4 answers this echo; the reply counts as a valid packet and
+				// the kernel drops the unsolicited echo reply.
+				if pending > 3*time.Second && time.Since(lastProbe) >= 2*time.Second {
+					lastProbe = time.Now()
+					probeSeq++
+					select {
+					case probeCh <- probePacket(probeSeq):
+					default:
+					}
+				}
 			}
 			if t := wedgedSince.Load(); t != 0 && time.Since(time.Unix(0, t)) > *wedgeAfter {
 				errc <- fmt.Errorf("USB writes to the phone failing for %s (phone stopped reading)", *wedgeAfter)
@@ -177,7 +197,10 @@ func main() {
 	if abnormal {
 		dev.Release(0)
 		dev.Close()
-		os.Exit(3) // wrapper: 3 = tunnel died, reconnect; 0 = user stopped it
+		if !everValid.Load() {
+			os.Exit(4) // wrapper: 4 = never delivered a packet this session (wrong accessory / wedged phone)
+		}
+		os.Exit(3) // wrapper: 3 = tunnel died after working, reconnect; 0 = user stopped it
 	}
 }
 
@@ -217,6 +240,7 @@ func usbToTun(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 			stPktsToTun.Add(1)
 		})
 		if good > 0 {
+			everValid.Store(true)
 			unanswered.Store(0) // only real packets count as "the phone is alive"
 		}
 		if bad {
@@ -263,6 +287,7 @@ func tunToUSB(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 			case err := <-errc:
 				return err
 			case first = <-ch:
+			case first = <-probeCh:
 			}
 		}
 		out = append(out[:0], first...)
@@ -314,6 +339,45 @@ var unanswered atomic.Int64
 
 // wedgedSince = unix-nano of the first USB write timeout in the current run (0 = writes succeeding).
 var wedgedSince atomic.Int64
+
+// everValid = at least one valid packet reached the TUN this session (exit 3 vs 4).
+var everValid atomic.Bool
+
+// probeCh carries watchdog echo probes into the OUT path.
+var probeCh = make(chan []byte, 1)
+
+// probePacket builds an ICMPv4 echo request 10.77.0.1 -> 1.1.1.1 (id 0x6d78 "mx").
+func probePacket(seq uint16) []byte {
+	p := make([]byte, 28+8)
+	p[0] = 0x45
+	p[2], p[3] = byte(len(p)>>8), byte(len(p))
+	p[8], p[9] = 64, 1
+	copy(p[12:16], []byte{10, 77, 0, 1})
+	copy(p[16:20], []byte{1, 1, 1, 1})
+	c := cksum(p[:20])
+	p[10], p[11] = byte(c>>8), byte(c)
+	p[20] = 8 // echo request
+	p[24], p[25] = 0x6d, 0x78
+	p[26], p[27] = byte(seq>>8), byte(seq)
+	copy(p[28:], "mxprobe!")
+	c = cksum(p[20:])
+	p[22], p[23] = byte(c>>8), byte(c)
+	return p
+}
+
+func cksum(b []byte) uint16 {
+	var s uint32
+	for i := 0; i+1 < len(b); i += 2 {
+		s += uint32(b[i])<<8 | uint32(b[i+1])
+	}
+	if len(b)%2 == 1 {
+		s += uint32(b[len(b)-1]) << 8
+	}
+	for s>>16 != 0 {
+		s = s&0xffff + s>>16
+	}
+	return ^uint16(s)
+}
 
 // counters for the 10 s stats line
 var stUSBBytesIn, stPktsToTun, stBadFrames, stPktsToUSB, stWriteTimeouts atomic.Int64
