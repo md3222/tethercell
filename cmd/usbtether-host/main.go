@@ -40,6 +40,7 @@ func main() {
 	drop := flag.Bool("drop", true, "drop root to SUDO_UID after the TUN/USB fds are open and routes installed")
 	v6 := flag.Bool("v6", false, "also give the TUN a ULA IPv6 address (and a v6 default route with -route)")
 	deadAfter := flag.Duration("dead-after", 15*time.Second, "declare the tunnel dead if data was sent and nothing came back for this long")
+	wedgeAfter := flag.Duration("wedge-after", 6*time.Second, "declare the tunnel dead if every USB write has timed out for this long")
 	reuse := flag.Bool("reuse", false, "attach to a phone already in accessory mode (our identity) instead of requiring a replug")
 	probe := flag.String("probe-profile", "", "DIAGNOSTIC: 'tetrd' sends the stock app identity to test whether the phone switches at all")
 	wait := flag.Duration("wait", 20*time.Second, "wait for the accessory to enumerate")
@@ -127,6 +128,10 @@ func main() {
 			}
 			if t := unanswered.Load(); t != 0 && time.Since(time.Unix(0, t)) > *deadAfter {
 				errc <- fmt.Errorf("no data from phone for %s while sending", *deadAfter)
+				return
+			}
+			if t := wedgedSince.Load(); t != 0 && time.Since(time.Unix(0, t)) > *wedgeAfter {
+				errc <- fmt.Errorf("USB writes to the phone failing for %s (phone stopped reading)", *wedgeAfter)
 				return
 			}
 		}
@@ -234,20 +239,30 @@ func tunToUSB(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 		}
 	}()
 	out := make([]byte, 0, 16384)
+	wrRun, wrDropped := 0, 0
+	var pending []byte
 	for {
 		var first []byte
-		select {
-		case <-stop:
-			return nil
-		case err := <-errc:
-			return err
-		case first = <-ch:
+		if pending != nil {
+			first, pending = pending, nil
+		} else {
+			select {
+			case <-stop:
+				return nil
+			case err := <-errc:
+				return err
+			case first = <-ch:
+			}
 		}
 		out = append(out[:0], first...)
 	drain:
 		for len(out) < 15000 {
 			select {
 			case p := <-ch:
+				if len(out)+len(p) > 16383 { // phone reads into 16384; keep room for the pad byte
+					pending = p
+					break drain
+				}
 				out = append(out, p...)
 			default:
 				break drain
@@ -259,10 +274,22 @@ func tunToUSB(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 		if _, err := d.BulkWrite(out, 2*time.Second); err != nil {
 			unanswered.CompareAndSwap(0, time.Now().UnixNano())
 			if errors.Is(err, syscall.ETIMEDOUT) {
-				continue // phone not reading yet: drop, TCP retransmits
+				// phone not reading: drop, TCP retransmits. Track the run so the watchdog sees a wedged OUT pipe.
+				if wedgedSince.Load() == 0 {
+					wedgedSince.Store(time.Now().UnixNano())
+				}
+				wrRun++
+				wrDropped += len(out)
+				log.Printf("usb write timeout #%d (dropped %d bytes, %d this run)", wrRun, len(out), wrDropped)
+				continue
 			}
 			return err
 		}
+		if wrRun > 0 {
+			log.Printf("usb write recovered after %d timeouts (%d bytes dropped)", wrRun, wrDropped)
+			wrRun, wrDropped = 0, 0
+		}
+		wedgedSince.Store(0)
 		unanswered.CompareAndSwap(0, time.Now().UnixNano())
 	}
 }
@@ -271,6 +298,9 @@ var probeProfile string
 
 // unanswered = unix-nano of the first packet sent since we last heard from the phone (0 = none pending).
 var unanswered atomic.Int64
+
+// wedgedSince = unix-nano of the first USB write timeout in the current run (0 = writes succeeding).
+var wedgedSince atomic.Int64
 var reuseAcc bool
 
 func acquire(serial string, wait time.Duration) (*usbdev.Device, error) {
