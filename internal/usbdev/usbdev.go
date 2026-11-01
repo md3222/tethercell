@@ -25,6 +25,8 @@ const (
 	ioctlClaimInterface = uintptr(0x8004550F)
 	// _IOR('U', 16, unsigned int)
 	ioctlReleaseInterface = uintptr(0x80045510)
+	// USBDEVFS_CLEAR_HALT = _IOR('U', 21, unsigned int)
+	ioctlClearHalt = uintptr(0x80045515)
 
 	aoaGetProtocol = 51
 	aoaSendString  = 52
@@ -189,6 +191,16 @@ func (d *Device) Claim(iface uint32) error {
 // Release releases a USB interface.
 func (d *Device) Release(iface uint32) {
 	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, d.f.Fd(), ioctlReleaseInterface, uintptr(unsafe.Pointer(&iface)))
+}
+
+// ClearHalt clears a halt/stall on endpoint ep and resets its data toggle on both sides.
+func (d *Device) ClearHalt(ep uint8) error {
+	v := uint32(ep)
+	_, _, e := syscall.Syscall(syscall.SYS_IOCTL, d.f.Fd(), ioctlClearHalt, uintptr(unsafe.Pointer(&v)))
+	if e != 0 {
+		return fmt.Errorf("usbdev: clear halt %#x: %w", ep, e)
+	}
+	return nil
 }
 
 // findEndpoints locates the bulk IN/OUT pair belonging to interface iface.

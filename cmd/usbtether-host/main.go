@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"tetrd-clone/internal/frame"
 	"tetrd-clone/internal/tun"
 	"tetrd-clone/internal/usbdev"
 )
@@ -39,7 +40,7 @@ func main() {
 	serial := flag.String("serial", "", "USB serial of the phone in normal mode")
 	drop := flag.Bool("drop", true, "drop root to SUDO_UID after the TUN/USB fds are open and routes installed")
 	v6 := flag.Bool("v6", false, "also give the TUN a ULA IPv6 address (and a v6 default route with -route)")
-	deadAfter := flag.Duration("dead-after", 15*time.Second, "declare the tunnel dead if data was sent and nothing came back for this long")
+	deadAfter := flag.Duration("dead-after", 10*time.Second, "declare the tunnel dead if data was sent and no valid packet came back for this long")
 	wedgeAfter := flag.Duration("wedge-after", 6*time.Second, "declare the tunnel dead if every USB write has timed out for this long")
 	reuse := flag.Bool("reuse", false, "attach to a phone already in accessory mode (our identity) instead of requiring a replug")
 	probe := flag.String("probe-profile", "", "DIAGNOSTIC: 'tetrd' sends the stock app identity to test whether the phone switches at all")
@@ -59,6 +60,12 @@ func main() {
 	}
 	defer func() { dev.Release(0); dev.Close() }()
 	log.Printf("accessory %04x:%04x in=%#x out=%#x", dev.Info.VID, dev.Info.PID, dev.In, dev.Out)
+	// Reset both bulk endpoints (halt + data toggles) so a -reuse attach starts from a clean state.
+	for _, ep := range []uint8{dev.In, dev.Out} {
+		if err := dev.ClearHalt(ep); err != nil {
+			log.Printf("clear halt %#x: %v (continuing)", ep, err)
+		}
+	}
 
 	td, err := tun.Open(*iface)
 	if err != nil {
@@ -117,6 +124,20 @@ func main() {
 	quit := func() { once.Do(func() { close(stop) }) }
 	errc := make(chan error, 2)
 	go func() { errc <- usbToTun(dev, td, stop) }()
+	go func() { // stats: with the phone's "core stats" line this names the hop that broke
+		var last [5]int64
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(10 * time.Second):
+			}
+			cur := [5]int64{stUSBBytesIn.Load(), stPktsToTun.Load(), stBadFrames.Load(), stPktsToUSB.Load(), stWriteTimeouts.Load()}
+			log.Printf("stats 10s: usbIn=%dB toTun=%d bad=%d toUSB=%d wTimeout=%d",
+				cur[0]-last[0], cur[1]-last[1], cur[2]-last[2], cur[3]-last[3], cur[4]-last[4])
+			last = cur
+		}
+	}()
 	go func() { errc <- tunToUSB(dev, td, stop) }()
 
 	go func() { // watchdog: data out but nothing back for too long = dead tunnel, give routes back
@@ -153,6 +174,11 @@ func main() {
 		failover()
 	}
 	time.Sleep(700 * time.Millisecond) // let read loops notice stop
+	if abnormal {
+		dev.Release(0)
+		dev.Close()
+		os.Exit(3) // wrapper: 3 = tunnel died, reconnect; 0 = user stopped it
+	}
 }
 
 // failover runs after an unexpected tunnel death: if Wi-Fi was switched off for the tunnel, bring it back.
@@ -165,28 +191,9 @@ func failover() {
 	}
 }
 
-func ipLen(b []byte) int {
-	if len(b) == 0 {
-		return 0
-	}
-	switch b[0] >> 4 {
-	case 4:
-		if len(b) < 4 {
-			return 0
-		}
-		return int(b[2])<<8 | int(b[3])
-	case 6:
-		if len(b) < 6 {
-			return 0
-		}
-		return 40 + (int(b[4])<<8 | int(b[5]))
-	}
-	return -1
-}
-
 func usbToTun(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
-	rd := make([]byte, 16384)
-	var acc []byte
+	rd := make([]byte, 16384) // >= one phone transfer (the phone writes one packet per transfer)
+	dumped := 0
 	for {
 		select {
 		case <-stop:
@@ -200,24 +207,28 @@ func usbToTun(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 			}
 			return err
 		}
-		unanswered.Store(0)
-		acc = append(acc, rd[:n]...)
-		for {
-			for len(acc) > 0 && acc[0] == 0 { // 0x00 = padding (keeps transfers off 512-byte multiples)
-				acc = acc[1:]
-			}
-			l := ipLen(acc)
-			if l < 0 {
-				acc = acc[:0]
-				break
-			}
-			if l == 0 || l > len(acc) {
-				break
-			}
-			if _, err := td.Write(acc[:l]); err != nil {
+		stUSBBytesIn.Add(int64(n))
+		// Each transfer stands alone: never carry bytes over, so garbage cannot wedge the stream.
+		good, bad := frame.Split(rd[:n], func(pkt []byte) {
+			if _, err := td.Write(pkt); err != nil {
 				log.Printf("tun write: %v", err)
+				return
 			}
-			acc = acc[l:]
+			stPktsToTun.Add(1)
+		})
+		if good > 0 {
+			unanswered.Store(0) // only real packets count as "the phone is alive"
+		}
+		if bad {
+			stBadFrames.Add(1)
+			if dumped < 5 {
+				dumped++
+				m := n
+				if m > 32 {
+					m = 32
+				}
+				log.Printf("bad frame (%d bytes, %d good before it): % x", n, good, rd[:m])
+			}
 		}
 	}
 }
@@ -280,6 +291,7 @@ func tunToUSB(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 				}
 				wrRun++
 				wrDropped += len(out)
+				stWriteTimeouts.Add(1)
 				log.Printf("usb write timeout #%d (dropped %d bytes, %d this run)", wrRun, len(out), wrDropped)
 				continue
 			}
@@ -290,6 +302,7 @@ func tunToUSB(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 			wrRun, wrDropped = 0, 0
 		}
 		wedgedSince.Store(0)
+		stPktsToUSB.Add(1)
 		unanswered.CompareAndSwap(0, time.Now().UnixNano())
 	}
 }
@@ -301,6 +314,9 @@ var unanswered atomic.Int64
 
 // wedgedSince = unix-nano of the first USB write timeout in the current run (0 = writes succeeding).
 var wedgedSince atomic.Int64
+
+// counters for the 10 s stats line
+var stUSBBytesIn, stPktsToTun, stBadFrames, stPktsToUSB, stWriteTimeouts atomic.Int64
 var reuseAcc bool
 
 func acquire(serial string, wait time.Duration) (*usbdev.Device, error) {
