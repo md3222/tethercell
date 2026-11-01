@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -38,6 +39,7 @@ func main() {
 	serial := flag.String("serial", "", "USB serial of the phone in normal mode")
 	drop := flag.Bool("drop", true, "drop root to SUDO_UID after the TUN/USB fds are open and routes installed")
 	v6 := flag.Bool("v6", false, "also give the TUN a ULA IPv6 address (and a v6 default route with -route)")
+	deadAfter := flag.Duration("dead-after", 15*time.Second, "declare the tunnel dead if data was sent and nothing came back for this long")
 	reuse := flag.Bool("reuse", false, "attach to a phone already in accessory mode (our identity) instead of requiring a replug")
 	probe := flag.String("probe-profile", "", "DIAGNOSTIC: 'tetrd' sends the stock app identity to test whether the phone switches at all")
 	wait := flag.Duration("wait", 20*time.Second, "wait for the accessory to enumerate")
@@ -63,7 +65,19 @@ func main() {
 	}
 	defer td.Close()
 	// Keep NetworkManager's hands off (it stripped nothing proven, but never let it guess).
-	_ = exec.Command("nmcli", "dev", "set", td.Name, "managed", "no").Run()
+	// If an NM profile "usbtether" (type tun) exists, hand the interface to NM *before* we add routes:
+	// NM then owns addresses + DNS (so DNS survives Wi-Fi going away) and reports "connected" (browsers
+	// stay online). Activation re-applies the device and wipes foreign routes, hence routes come last.
+	if out, err := exec.Command("nmcli", "-g", "connection.id", "con", "show", "usbtether").Output(); err == nil && len(out) > 0 {
+		_ = exec.Command("nmcli", "dev", "set", td.Name, "managed", "yes").Run()
+		if o, err := exec.Command("nmcli", "con", "up", "usbtether", "ifname", td.Name).CombinedOutput(); err != nil {
+			log.Printf("nmcli con up usbtether: %v: %s (continuing without NM)", err, o)
+		} else {
+			log.Printf("NetworkManager adopted %s (profile usbtether: DNS via tunnel)", td.Name)
+		}
+	} else {
+		_ = exec.Command("nmcli", "dev", "set", td.Name, "managed", "no").Run()
+	}
 
 	must := func(args ...string) {
 		if out, err := exec.Command("ip", args...).CombinedOutput(); err != nil {
@@ -104,16 +118,46 @@ func main() {
 	go func() { errc <- usbToTun(dev, td, stop) }()
 	go func() { errc <- tunToUSB(dev, td, stop) }()
 
+	go func() { // watchdog: data out but nothing back for too long = dead tunnel, give routes back
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(2 * time.Second):
+			}
+			if t := unanswered.Load(); t != 0 && time.Since(time.Unix(0, t)) > *deadAfter {
+				errc <- fmt.Errorf("no data from phone for %s while sending", *deadAfter)
+				return
+			}
+		}
+	}()
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	abnormal := false
 	select {
 	case s := <-sig:
 		log.Printf("signal %v", s)
 	case err := <-errc:
 		log.Printf("pump ended: %v", err)
+		abnormal = true
 	}
 	quit()
+	td.Close() // interface + routes vanish now, so Wi-Fi/usb0 take over immediately
+	if abnormal {
+		failover()
+	}
 	time.Sleep(700 * time.Millisecond) // let read loops notice stop
+}
+
+// failover runs after an unexpected tunnel death: if Wi-Fi was switched off for the tunnel, bring it back.
+func failover() {
+	out, _ := exec.Command("nmcli", "-t", "-f", "DEVICE,STATE", "dev").Output()
+	if !strings.Contains(string(out), "wlan0:connected") {
+		log.Printf("failover: tunnel died, reconnecting wlan0")
+		_ = exec.Command("nmcli", "radio", "wifi", "on").Run()
+		_ = exec.Command("nmcli", "dev", "connect", "wlan0").Run()
+	}
 }
 
 func ipLen(b []byte) int {
@@ -151,6 +195,7 @@ func usbToTun(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 			}
 			return err
 		}
+		unanswered.Store(0)
 		acc = append(acc, rd[:n]...)
 		for {
 			for len(acc) > 0 && acc[0] == 0 { // 0x00 = padding (keeps transfers off 512-byte multiples)
@@ -212,15 +257,20 @@ func tunToUSB(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 			out = append(out, 0) // avoid needing a ZLP to terminate the transfer
 		}
 		if _, err := d.BulkWrite(out, 2*time.Second); err != nil {
+			unanswered.CompareAndSwap(0, time.Now().UnixNano())
 			if errors.Is(err, syscall.ETIMEDOUT) {
 				continue // phone not reading yet: drop, TCP retransmits
 			}
 			return err
 		}
+		unanswered.CompareAndSwap(0, time.Now().UnixNano())
 	}
 }
 
 var probeProfile string
+
+// unanswered = unix-nano of the first packet sent since we last heard from the phone (0 = none pending).
+var unanswered atomic.Int64
 var reuseAcc bool
 
 func acquire(serial string, wait time.Duration) (*usbdev.Device, error) {
