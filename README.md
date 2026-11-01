@@ -1,0 +1,31 @@
+# usbtether (phone app + core)
+
+Own USB tether, original code. Desktop = `~/work/tetrd-re/clone/cmd/usbtether-host`, phone = this app
+(`com.matt.usbtether`). Wire format: bare IP datagrams over the AOA bulk endpoints (own AOA identity
+mxlab/usbtether v1; NOT Tetrd-compatible). Phone = exit node: gVisor netstack + TCP/UDP forwarders +
+ICMP echo (unprivileged ICMP sockets), re-dialing from real Android sockets.
+
+## Build
+```bash
+export ANDROID_HOME=$HOME/work/tools/android-sdk ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.3.13750724
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 PATH=$PATH:$HOME/go/bin
+gomobile bind -target=android/arm64 -androidapi 29 -javapkg com.matt.usbtether -o build/core.aar ./core
+rm -rf build/aar && unzip -o -q build/core.aar -d build/aar && ./build-apk.sh && adb install -r build/usbtether.apk
+```
+Host: `cd ~/work/tetrd-re/clone && go build -o bin/usbtether-host ./cmd/usbtether-host`
+
+## Run (phone unlocked/awake for the first attach)
+```bash
+sudo ~/work/tetrd-re/clone/bin/usbtether-host -hostroute 1.1.1.1/32   # safe: one route
+sudo ~/work/tetrd-re/clone/bin/usbtether-host -route [-v6]            # default route (metric 50), wlan0 stays fallback
+# phone already in accessory mode (no replug):  add -reuse, then: adb shell am start -n com.matt.usbtether/.MainActivity
+```
+Host drops root after TUN/USB/routes exist (`-drop=false` to disable). Routes vanish when the host exits.
+
+## Measured 2026-11-01 (phone on LTE)
+download 58-94 Mbit/s, upload ~16, RTT under saturated download ~37 ms, survives screen-off, IPv4+IPv6 TCP, UDP DNS,
+ICMPv4 echo. Writes on the phone are single-packet (`maxBatch=0`): coalescing was slower/erratic. Host batches TUN->USB.
+
+## Known gaps
+ICMPv6 echo answered locally (not forwarded); no auto-start/reconnect without the host re-running; not a VPN
+(phone's own traffic unaffected); debug-signed APK; a transfer is padded with 0x00 when a multiple of 512 bytes.
