@@ -14,6 +14,17 @@ rm -rf build/aar && unzip -o -q build/core.aar -d build/aar && ./build-apk.sh &&
 ```
 Host: `cd ~/work/tetrd-re/clone && go build -o bin/usbtether-host ./cmd/usbtether-host`
 
+## Everyday use (wrapper, auto-reconnect)
+```bash
+usbtether-host -route -v6     # ~/.local/bin wrapper: sudo-gui, starts the phone app, logs to ~/work/tetrd-re/logs/host.log
+```
+- Reconnects by itself when the host exits with code 3 (watchdog: no valid packets for 10 s, or USB writes stuck 6 s).
+  Routes are gone while it reconnects, so Wi-Fi carries traffic. Ctrl-C stops it.
+- Stock Tetrd and this cannot share the phone. Quit Tetrd (tray → Quit) first; the wrapper refuses to start while
+  `/opt/Tetrd/bin/tetrd` runs. After using Tetrd, **replug the cable once**: the phone otherwise stays in accessory mode
+  with Tetrd's identity, and `-reuse` would attach to the wrong app.
+- Diagnosing a stall: host `stats 10s: usbIn= toTun= bad= toUSB= wTimeout=` vs phone `adb logcat | grep "core stats"`.
+
 ## Run (phone unlocked/awake for the first attach)
 ```bash
 sudo ~/work/tetrd-re/clone/bin/usbtether-host -hostroute 1.1.1.1/32   # safe: one route
