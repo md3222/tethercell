@@ -81,7 +81,7 @@ func Start(fd int) error {
 
 	tf := tcp.NewForwarder(st, 0, 2048, func(r *tcp.ForwarderRequest) { handleTCP(r) })
 	st.SetTransportProtocolHandler(tcp.ProtocolNumber, tf.HandlePacket)
-	uf := udp.NewForwarder(st, func(r *udp.ForwarderRequest) bool { go handleUDP(r); return true })
+	uf := udp.NewForwarder(st, func(r *udp.ForwarderRequest) bool { handleUDP(r); return true })
 	st.SetTransportProtocolHandler(udp.ProtocolNumber, uf.HandlePacket)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -285,18 +285,22 @@ func handleUDP(r *udp.ForwarderRequest) {
 	nUDP.Add(1)
 	id := r.ID()
 	var wq waiter.Queue
+	// Create the endpoint synchronously: a resolver sends A+AAAA back to back from one
+	// socket, and the second datagram must find this endpoint instead of racing its creation.
 	ep, e := r.CreateEndpoint(&wq)
 	if e != nil {
 		return
 	}
 	in := gonet.NewUDPConn(&wq, ep)
 	dst := net.JoinHostPort(id.LocalAddress.String(), fmt.Sprint(id.LocalPort))
-	out, err := net.Dial("udp", dst)
-	if err != nil {
-		in.Close()
-		return
-	}
-	go pipeUDP(in, out)
+	go func() {
+		out, err := net.Dial("udp", dst)
+		if err != nil {
+			in.Close()
+			return
+		}
+		pipeUDP(in, out)
+	}()
 }
 
 func pipeUDP(a, b net.Conn) {
