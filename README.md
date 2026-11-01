@@ -18,8 +18,12 @@ Host: `cd ~/work/tetrd-re/clone && go build -o bin/usbtether-host ./cmd/usbtethe
 ```bash
 usbtether-host -route -v6     # ~/.local/bin wrapper: sudo-gui, starts the phone app, logs to ~/work/tetrd-re/logs/host.log
 ```
-- Reconnects by itself when the host exits with code 3 (watchdog: no valid packets for 10 s, or USB writes stuck 6 s).
-  Routes are gone while it reconnects, so Wi-Fi carries traffic. Ctrl-C stops it.
+- Watchdog: after 3 s with no reply the host pings 1.1.1.1 through the phone every 2 s. It declares the tunnel dead
+  after 10 s with no valid packet back, or 6 s of stuck USB writes.
+- Exit 3 (died after working) → reconnect, unlimited. Exit 4 (never delivered a packet) → retry with a force-stopped,
+  relaunched phone app, give up after 3 ("replug"). Other failures (unplugged) → retry every 5 s for 1 min. Routes are
+  gone while it reconnects, so Wi-Fi carries traffic. Ctrl-C stops it. `-clear-halt=false` disables the attach-time
+  endpoint reset if a first attach goes straight to write timeouts.
 - Stock Tetrd and this cannot share the phone. Quit Tetrd (tray → Quit) first; the wrapper refuses to start while
   `/opt/Tetrd/bin/tetrd` runs. After using Tetrd, **replug the cable once**: the phone otherwise stays in accessory mode
   with Tetrd's identity, and `-reuse` would attach to the wrong app.
