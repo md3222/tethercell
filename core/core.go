@@ -40,6 +40,7 @@ const (
 
 var (
 	nReadErr, nRead, nInj, nOut, nTCP, nTCPerr, nUDP, nPing atomic.Int64
+	nBadFrame, nOutBytes                                    atomic.Int64
 	mu                                                      sync.Mutex
 	running                                                 *tunnel
 )
@@ -50,6 +51,19 @@ type tunnel struct {
 	ep     *channel.Endpoint
 	cancel context.CancelFunc
 	done   chan struct{}
+	wmu    sync.Mutex // one writer at a time on the accessory fd (stackToUSB + ping replies)
+}
+
+// write sends one transfer to the host, serialized with every other writer.
+func (t *tunnel) write(b []byte) error {
+	t.wmu.Lock()
+	defer t.wmu.Unlock()
+	_, err := t.f.Write(b)
+	if err == nil {
+		nOut.Add(1)
+		nOutBytes.Add(int64(len(b)))
+	}
+	return err
 }
 
 // Start takes ownership of fd (the detached accessory file descriptor).
@@ -90,8 +104,9 @@ func Start(fd int) error {
 	go func() {
 		for ctx.Err() == nil {
 			time.Sleep(3 * time.Second)
-			log.Printf("core stats: readErr=%d usbRead=%d inject=%d out=%d tcp=%d tcpErr=%d udp=%d ping=%d",
-				nReadErr.Load(), nRead.Load(), nInj.Load(), nOut.Load(), nTCP.Load(), nTCPerr.Load(), nUDP.Load(), nPing.Load())
+			log.Printf("core stats: readErr=%d usbRead=%d inject=%d bad=%d out=%d outB=%d tcp=%d tcpErr=%d udp=%d ping=%d",
+				nReadErr.Load(), nRead.Load(), nInj.Load(), nBadFrame.Load(), nOut.Load(), nOutBytes.Load(),
+				nTCP.Load(), nTCPerr.Load(), nUDP.Load(), nPing.Load())
 		}
 	}()
 	go t.usbToStack()
@@ -135,53 +150,26 @@ func Running() bool {
 	return running != nil
 }
 
-// ipLen returns the total length of the datagram at the head of b, or 0 if
-// more bytes are needed, or -1 if b does not start with an IP header.
-func ipLen(b []byte) int {
-	if len(b) < 1 {
-		return 0
-	}
-	switch b[0] >> 4 {
-	case 4:
-		if len(b) < 4 {
-			return 0
-		}
-		return int(b[2])<<8 | int(b[3])
-	case 6:
-		if len(b) < 6 {
-			return 0
-		}
-		return 40 + (int(b[4])<<8 | int(b[5]))
-	}
-	return -1
-}
-
 func (t *tunnel) usbToStack() {
-	buf := make([]byte, 0, 2*maxRead)
+	// The host sends whole packets per transfer, <=16383 bytes, so one read = one transfer.
+	// Parse each read on its own and never carry bytes over: garbage costs one transfer, not the link.
 	tmp := make([]byte, 16384)
-	errRun := 0
+	errRun, dumped := 0, 0
 	for {
 		n, err := t.f.Read(tmp)
 		if n > 0 {
 			nRead.Add(1)
-			buf = append(buf, tmp[:n]...)
-			for {
-				for len(buf) > 0 && buf[0] == 0 { // 0x00 = padding
-					buf = buf[1:]
+			good, bad := frameSplit(tmp[:n], t.inject)
+			if bad {
+				nBadFrame.Add(1)
+				if dumped < 5 {
+					dumped++
+					m := n
+					if m > 32 {
+						m = 32
+					}
+					log.Printf("bad frame (%d bytes, %d good before it): % x", n, good, tmp[:m])
 				}
-				l := ipLen(buf)
-				if l < 0 {
-					buf = buf[:0] // desync: drop and resync on next transfer
-					break
-				}
-				if l == 0 || l > len(buf) {
-					break
-				}
-				t.inject(buf[:l])
-				buf = buf[l:]
-			}
-			if len(buf) == 0 {
-				buf = buf[:0:cap(buf)]
 			}
 		}
 		if err != nil {
@@ -250,8 +238,7 @@ func (t *tunnel) stackToUSB(ctx context.Context) {
 		if len(out)%512 == 0 {
 			out = append(out, 0) // keep the transfer off a max-packet multiple (no ZLP needed)
 		}
-		nOut.Add(1)
-		if _, err := t.f.Write(out); err != nil {
+		if err := t.write(out); err != nil {
 			Stop()
 			return
 		}

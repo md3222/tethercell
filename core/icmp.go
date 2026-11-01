@@ -89,7 +89,7 @@ func (t *tunnel) pingV4(p []byte) {
 		copy(out[28:], re.Data)
 		cs = csum(out[20:])
 		out[22], out[23] = byte(cs>>8), byte(cs)
-		t.f.Write(out)
+		_ = t.write(out)
 		return
 	}
 }
