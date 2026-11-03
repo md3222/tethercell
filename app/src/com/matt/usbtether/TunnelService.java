@@ -14,6 +14,8 @@ import android.util.Log;
 
 public class TunnelService extends Service {
     private static final String TAG = "mxusbtether";
+    static final String ACTION_STOP = "com.matt.usbtether.STOP";
+    private volatile boolean stopping;
     private volatile Thread worker;
 
     // Android can launch us mid-switch while the gadget is still flapping, so the
@@ -21,7 +23,7 @@ public class TunnelService extends Service {
     private void loop() {
         UsbManager um = getSystemService(UsbManager.class);
         int fast = 0;
-        while (fast < 20) {
+        while (fast < 20 && !stopping) {
             UsbAccessory acc = ours(um.getAccessoryList());
             if (acc == null) {
                 if (++fast > 6) break;
@@ -44,6 +46,10 @@ public class TunnelService extends Service {
         stopSelf();
     }
 
+    static boolean accessoryAttached(android.content.Context c) {
+        return ours(c.getSystemService(UsbManager.class).getAccessoryList()) != null;
+    }
+
     // Only ever open OUR accessory identity, never another app's (e.g. stock Tetrd's robskie/tether).
     private static UsbAccessory ours(UsbAccessory[] list) {
         if (list == null) return null;
@@ -58,11 +64,27 @@ public class TunnelService extends Service {
     @Override public IBinder onBind(Intent i) { return null; }
 
     @Override public int onStartCommand(Intent i, int flags, int id) {
+        if (i != null && ACTION_STOP.equals(i.getAction())) {
+            stopping = true;
+            com.matt.usbtether.core.Core.stop();
+            stopForeground(STOP_FOREGROUND_REMOVE);
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        stopping = false;
         NotificationChannel ch = new NotificationChannel("tun", "USB tether", NotificationManager.IMPORTANCE_LOW);
         getSystemService(NotificationManager.class).createNotificationChannel(ch);
         Notification n = new Notification.Builder(this, "tun")
             .setContentTitle("USB tether active")
+            .setContentText("Tap for status")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setContentIntent(android.app.PendingIntent.getActivity(this, 0,
+                new Intent(this, MainActivity.class).setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
+                android.app.PendingIntent.FLAG_IMMUTABLE))
+            .addAction(new Notification.Action.Builder(null, "Stop",
+                android.app.PendingIntent.getService(this, 1,
+                    new Intent(this, TunnelService.class).setAction(ACTION_STOP),
+                    android.app.PendingIntent.FLAG_IMMUTABLE)).build())
             .build();
         try {
             startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);

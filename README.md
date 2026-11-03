@@ -1,5 +1,21 @@
 # usbtether (phone app + core)
 
+## The app (2026-11-03): one desktop binary, phone app inside
+```bash
+~/work/tetrd-re/dist.sh                 # build APK + dist/usbtether (APK embedded), SHA256SUMS
+~/work/tetrd-re/dist/usbtether setup    # once per desktop: one popup -> /usr/local/bin/usbtether
+                                        # (cap_net_admin, no root process) + udev uaccess rule; NM profile + menu entry
+usbtether                               # = up -route -v6: installs/updates the phone app over adb, connects, reconnects
+usbtether status | phone | apk [file] | selftest | run -h
+```
+- Phone wiped: enable USB debugging, plug in, accept the RSA prompt, run `usbtether` (installs the app itself).
+  No USB debugging: `usbtether apk`, copy `~/usbtether.apk` to the phone, install it from Files. Android opens the app
+  on attach (accessory filter); tap OK if it asks.
+- Desktop wiped: copy `dist/usbtether` (it is static and self-contained) and run `usbtether setup`.
+- Signing key: `~/work/tetrd-re/keys/usbtether.keystore` (= old build/debug.keystore). Lose it and updates need
+  `adb uninstall com.matt.usbtether` first. NOTE: cloud-backup's filter excludes `*.keystore`.
+- Phone screen: tap the launcher icon for status/counters/Stop; started by the PC it stays invisible.
+
 Own USB tether, original code. Desktop = `~/work/tetrd-re/clone/cmd/usbtether-host`, phone = this app
 (`com.matt.usbtether`). Wire format: bare IP datagrams over the AOA bulk endpoints (own AOA identity
 mxlab/usbtether v1; NOT Tetrd-compatible). Phone = exit node: gVisor netstack + TCP/UDP forwarders +
@@ -43,4 +59,4 @@ ICMPv4 echo. Writes on the phone are single-packet (`maxBatch=0`): coalescing wa
 
 ## Known gaps
 ICMPv6 echo answered locally (not forwarded); no auto-start/reconnect without the host re-running; not a VPN
-(phone's own traffic unaffected); debug-signed APK; a transfer is padded with 0x00 when a multiple of 512 bytes.
+(phone's own traffic unaffected); debug-key-signed APK; a transfer is padded with 0x00 when a multiple of 512 bytes.

@@ -331,3 +331,9 @@ func pipe(a, b net.Conn) {
 	a.Close()
 	b.Close()
 }
+
+// Stats is a one-line summary for the phone UI (counters since the app process started).
+func Stats() string {
+	return fmt.Sprintf("to internet: %d pkts   back to PC: %d pkts / %.1f MB\nTCP flows %d   UDP flows %d   pings %d",
+		nInj.Load(), nOut.Load(), float64(nOutBytes.Load())/1e6, nTCP.Load(), nUDP.Load(), nPing.Load())
+}
