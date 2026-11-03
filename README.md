@@ -11,6 +11,10 @@ usbtether status | phone | apk [file] | selftest | run -h
 - Phone wiped: enable USB debugging, plug in, accept the RSA prompt, run `usbtether` (installs the app itself).
   No USB debugging: `usbtether apk`, copy `~/usbtether.apk` to the phone, install it from Files. Android opens the app
   on attach (accessory filter); tap OK if it asks.
+- First attach after an install: Android asks "Open USB Tether (mine) for this accessory?" -> tick *Always*, OK.
+  Without that grant the service started over adb cannot open the accessory.
+- If adb or the APK install is refused after a wipe, check Samsung Auto Blocker (Settings > Security and privacy);
+  unverified whether a wipe re-enables it.
 - Desktop wiped: copy `dist/usbtether` (it is static and self-contained) and run `usbtether setup`.
 - Signing key: `~/work/tetrd-re/keys/usbtether.keystore` (= old build/debug.keystore). Lose it and updates need
   `adb uninstall com.matt.usbtether` first. NOTE: cloud-backup's filter excludes `*.keystore`.
