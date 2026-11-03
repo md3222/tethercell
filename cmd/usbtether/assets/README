@@ -1,0 +1,1 @@
+dist.sh copies usbtether.apk + apk_version.txt here before go build (gitignored).
