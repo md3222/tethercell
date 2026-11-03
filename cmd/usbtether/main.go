@@ -158,6 +158,12 @@ func up(hostArgs []string) int {
 	if err := host.DropCapsKeepExec(); err != nil {
 		fail("drop caps: " + err.Error())
 	}
+	if fileExists("/sys/class/net/" + tunName) {
+		// A non-persistent TUN exists only while a process holds it: another host is live. Never
+		// adb-install over it (that kills the phone side) or fight it for the phone.
+		fmt.Fprintln(os.Stderr, "usbtether: a tunnel is already up ("+tunName+", old usbtether-host wrapper?): stop it first (Ctrl-C in its window)")
+		return 1
+	}
 	if tetrdRunning() {
 		fmt.Fprintln(os.Stderr, "usbtether: stock Tetrd is running and holds the phone. Quit Tetrd (tray -> Quit), replug once, rerun.")
 		return 1
@@ -223,6 +229,9 @@ func up(hostArgs []string) int {
 		case 3:
 			fails, dead4, fresh, delay = 0, 0, false, 2*time.Second
 			say("tunnel died, reconnecting in %s (Wi-Fi carries traffic meanwhile)", delay)
+		case 2:
+			say("bad host flags (see: usbtether run -h)")
+			return 2
 		case 4:
 			dead4++
 			fresh, delay = true, 3*time.Second
@@ -255,6 +264,7 @@ func runHost(exe string, args []string, sig chan os.Signal) (rc int, stopped boo
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // we forward signals ourselves
 	pr, pw := io.Pipe()
 	c.Stdout, c.Stderr = pw, pw
+	c.WaitDelay = 2 * time.Second // a leftover grandchild holding the pipe must not hang the supervisor
 	if err := c.Start(); err != nil {
 		say("start host: %v", err)
 		return 1, false
@@ -277,11 +287,11 @@ func runHost(exe string, args []string, sig chan os.Signal) (rc int, stopped boo
 	case err = <-done:
 	case <-sig:
 		stopped = true
-		_ = c.Process.Signal(syscall.SIGTERM) // host: close TUN (routes vanish), release USB
+		_ = syscall.Kill(-c.Process.Pid, syscall.SIGTERM) // host's group: close TUN (routes vanish), release USB
 		select {
 		case err = <-done:
 		case <-time.After(5 * time.Second):
-			_ = c.Process.Kill()
+			_ = syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
 			err = <-done
 		}
 	}
