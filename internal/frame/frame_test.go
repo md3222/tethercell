@@ -42,7 +42,7 @@ func TestSplit(t *testing.T) {
 		{"garbage prefix", cat([]byte{0x47, 0x11, 0x22}, v4(8)), 0, true},
 		{"bogus v4 length", func() []byte { p := v4(8); p[2], p[3] = 0xff, 0xf0; return p }(), 0, true},
 		{"bad checksum", func() []byte { p := v4(8); p[10] ^= 0xff; return p }(), 0, true},
-		{"oversize v6", v6(1600), 0, true},
+		{"oversize v6", v6(MaxPacket), 0, true},
 		{"max v4", v4(MaxPacket - 20), 1, false},
 		{"empty", nil, 0, false},
 	}

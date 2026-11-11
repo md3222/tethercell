@@ -29,7 +29,7 @@ import (
 const (
 	samsungVID = 0x04e8
 	hostAddr   = "10.77.0.1/24"
-	mtu        = 1400
+	mtu        = 16000 // USB-only link: the phone terminates TCP, so this never reaches the internet path
 )
 
 // Main runs the host with the given flags (os.Args[1:] style) and exits the process:
