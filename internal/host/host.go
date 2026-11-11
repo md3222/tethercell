@@ -47,6 +47,7 @@ func Main(args []string) {
 	clearHalt := fs.Bool("clear-halt", true, "CLEAR_HALT both bulk endpoints on attach (resets data toggles)")
 	reuse := fs.Bool("reuse", false, "attach to a phone already in accessory mode (our identity) instead of requiring a replug")
 	probe := fs.String("probe-profile", "", "DIAGNOSTIC: 'tetrd' sends the stock app identity to test whether the phone switches at all")
+	urbs := fs.Int("urbs", 8, "bulk-IN reads kept queued (async usbfs URBs); 0 = old one-at-a-time BulkRead")
 	wait := fs.Duration("wait", 20*time.Second, "wait for the accessory to enumerate")
 	fs.Parse(args)
 	log.SetPrefix("usbtether-host: ")
@@ -129,7 +130,7 @@ func Main(args []string) {
 	var once sync.Once
 	quit := func() { once.Do(func() { close(stop) }) }
 	errc := make(chan error, 2)
-	go func() { errc <- usbToTun(dev, td, stop) }()
+	go func() { errc <- usbToTun(dev, td, stop, *urbs) }()
 	go func() { // stats: with the phone's "core stats" line this names the hop that broke
 		var last [5]int64
 		for {
@@ -216,25 +217,14 @@ func failover() {
 	}
 }
 
-func usbToTun(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
-	rd := make([]byte, 16384) // >= one phone transfer (the phone writes one packet per transfer)
+func usbToTun(d *usbdev.Device, td *tun.Device, stop <-chan struct{}, urbs int) error {
+	const xfer = 16384 // >= one phone transfer (the phone writes one packet per transfer)
 	dumped := 0
-	for {
-		select {
-		case <-stop:
-			return nil
-		default:
-		}
-		n, err := d.BulkRead(rd, 500*time.Millisecond)
-		if err != nil {
-			if errors.Is(err, syscall.ETIMEDOUT) {
-				continue
-			}
-			return err
-		}
-		stUSBBytesIn.Add(int64(n))
+	// handle is shared by both read paths: stats, watchdog liveness, bad-frame dumps.
+	handle := func(b []byte) {
+		stUSBBytesIn.Add(int64(len(b)))
 		// Each transfer stands alone: never carry bytes over, so garbage cannot wedge the stream.
-		good, bad := frame.Split(rd[:n], func(pkt []byte) {
+		good, bad := frame.Split(b, func(pkt []byte) {
 			if _, err := td.Write(pkt); err != nil {
 				log.Printf("tun write: %v", err)
 				return
@@ -249,13 +239,51 @@ func usbToTun(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 			stBadFrames.Add(1)
 			if dumped < 5 {
 				dumped++
-				m := n
+				m := len(b)
 				if m > 32 {
 					m = 32
 				}
-				log.Printf("bad frame (%d bytes, %d good before it): % x", n, good, rd[:m])
+				log.Printf("bad frame (%d bytes, %d good before it): % x", len(b), good, b[:m])
 			}
 		}
+	}
+	if urbs > 0 {
+		ar, err := d.NewAsyncReader(urbs, xfer)
+		if err != nil {
+			log.Printf("async reads unavailable (%v): falling back to one-at-a-time BulkRead", err)
+		} else {
+			defer ar.Close()
+			log.Printf("usb in: %d async reads queued", urbs)
+			for {
+				select {
+				case <-stop:
+					return nil
+				default:
+				}
+				if err := ar.Next(500*time.Millisecond, handle); err != nil {
+					if errors.Is(err, usbdev.ErrIdle) {
+						continue
+					}
+					return err
+				}
+			}
+		}
+	}
+	rd := make([]byte, xfer)
+	for {
+		select {
+		case <-stop:
+			return nil
+		default:
+		}
+		n, err := d.BulkRead(rd, 500*time.Millisecond)
+		if err != nil {
+			if errors.Is(err, syscall.ETIMEDOUT) {
+				continue
+			}
+			return err
+		}
+		handle(rd[:n])
 	}
 }
 
