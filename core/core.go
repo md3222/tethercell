@@ -34,7 +34,7 @@ var maxBatch = 0 // >0 coalesces writes; measured slower+erratic on this phone, 
 
 const (
 	nicID   = 1
-	mtu     = 1400
+	mtu     = 16000 // must match the host TUN MTU; +1 pad byte still fits one 16384-byte transfer
 	maxRead = 65536
 )
 
@@ -81,6 +81,7 @@ func Start(fd int) error {
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol4, icmp.NewProtocol6},
 	})
+	tuneTCP(st)
 	ep := channel.New(1024, mtu, "")
 	if e := st.CreateNIC(nicID, ep); e != nil {
 		f.Close()
@@ -112,6 +113,23 @@ func Start(fd int) error {
 	go t.usbToStack()
 	go t.stackToUSB(ctx)
 	return nil
+}
+
+// tuneTCP: gVisor defaults (no SACK, reno, small fixed windows) cap the host<->phone leg.
+// Errors are logged, not fatal: a missing option only costs speed.
+func tuneTCP(st *stack.Stack) {
+	opts := []tcpip.SettableTransportProtocolOption{
+		func() *tcpip.TCPSACKEnabled { v := tcpip.TCPSACKEnabled(true); return &v }(),
+		func() *tcpip.TCPModerateReceiveBufferOption { v := tcpip.TCPModerateReceiveBufferOption(true); return &v }(),
+		func() *tcpip.CongestionControlOption { v := tcpip.CongestionControlOption("cubic"); return &v }(),
+		&tcpip.TCPReceiveBufferSizeRangeOption{Min: 4 << 10, Default: 1 << 20, Max: 8 << 20},
+		&tcpip.TCPSendBufferSizeRangeOption{Min: 4 << 10, Default: 1 << 20, Max: 8 << 20},
+	}
+	for _, o := range opts {
+		if e := st.SetTransportProtocolOption(tcp.ProtocolNumber, o); e != nil {
+			log.Printf("tcp option %T: %v", o, e)
+		}
+	}
 }
 
 // Run is Start that blocks until the tunnel stops (EOF/IO error/Stop).

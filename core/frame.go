@@ -7,8 +7,8 @@
 // that transfer only, instead of desyncing the stream until a restart.
 package core
 
-// maxPacket is the largest datagram accepted (link MTU is 1400; allow headroom).
-const maxPacket = 1500
+// maxPacket is the largest datagram accepted (link MTU 16000; a transfer is <=16384 bytes).
+const maxPacket = 16384
 
 // frameLen validates the datagram at the head of b and returns its length, or 0 if
 // b does not start with a plausible, complete IPv4/IPv6 packet.
