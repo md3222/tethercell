@@ -116,14 +116,15 @@ func Start(fd int) error {
 }
 
 // tuneTCP: gVisor defaults (no SACK, reno, small fixed windows) cap the host<->phone leg.
+// Buffers capped at 2 MB: 8 MB gave 243 Mbit/s but 200/360 ms loaded ping (bufferbloat).
 // Errors are logged, not fatal: a missing option only costs speed.
 func tuneTCP(st *stack.Stack) {
 	opts := []tcpip.SettableTransportProtocolOption{
 		func() *tcpip.TCPSACKEnabled { v := tcpip.TCPSACKEnabled(true); return &v }(),
 		func() *tcpip.TCPModerateReceiveBufferOption { v := tcpip.TCPModerateReceiveBufferOption(true); return &v }(),
 		func() *tcpip.CongestionControlOption { v := tcpip.CongestionControlOption("cubic"); return &v }(),
-		&tcpip.TCPReceiveBufferSizeRangeOption{Min: 4 << 10, Default: 1 << 20, Max: 8 << 20},
-		&tcpip.TCPSendBufferSizeRangeOption{Min: 4 << 10, Default: 1 << 20, Max: 8 << 20},
+		&tcpip.TCPReceiveBufferSizeRangeOption{Min: 4 << 10, Default: 256 << 10, Max: 2 << 20},
+		&tcpip.TCPSendBufferSizeRangeOption{Min: 4 << 10, Default: 256 << 10, Max: 2 << 20},
 	}
 	for _, o := range opts {
 		if e := st.SetTransportProtocolOption(tcp.ProtocolNumber, o); e != nil {
