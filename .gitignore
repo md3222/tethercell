@@ -1,0 +1,8 @@
+# build outputs and signing material never go in git
+/dist/
+/keys
+*.keystore
+*.jks
+*.apk
+*.aar
+build/
