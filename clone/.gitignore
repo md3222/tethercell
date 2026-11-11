@@ -1,0 +1,4 @@
+bin/
+/cmd/usbtether/assets/usbtether.apk
+/cmd/usbtether/assets/apk_version.txt
+/dist/
