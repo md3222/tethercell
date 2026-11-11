@@ -29,7 +29,7 @@ import (
 const (
 	samsungVID = 0x04e8
 	hostAddr   = "10.77.0.1/24"
-	mtu        = 16000 // USB-only link: the phone terminates TCP, so this never reaches the internet path
+	defaultMTU = 16000 // USB-only link: the phone terminates TCP, so this never reaches the internet path
 )
 
 // Main runs the host with the given flags (os.Args[1:] style) and exits the process:
@@ -47,10 +47,14 @@ func Main(args []string) {
 	clearHalt := fs.Bool("clear-halt", true, "CLEAR_HALT both bulk endpoints on attach (resets data toggles)")
 	reuse := fs.Bool("reuse", false, "attach to a phone already in accessory mode (our identity) instead of requiring a replug")
 	probe := fs.String("probe-profile", "", "DIAGNOSTIC: 'tetrd' sends the stock app identity to test whether the phone switches at all")
+	mtu := fs.Int("mtu", defaultMTU, "TUN MTU (576-16000); 1400 = pre-v3 packet sizes both ways, the phone follows the host's MSS")
 	urbs := fs.Int("urbs", 8, "bulk-IN reads kept queued (async usbfs URBs); 0 = old one-at-a-time BulkRead")
 	wait := fs.Duration("wait", 20*time.Second, "wait for the accessory to enumerate")
 	fs.Parse(args)
 	log.SetPrefix("usbtether-host: ")
+	if *mtu < 576 || *mtu > defaultMTU {
+		log.Fatalf("-mtu %d out of range 576-%d (a transfer must fit the phone's 16384-byte read)", *mtu, defaultMTU)
+	}
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	if os.Geteuid() != 0 && !HasNetAdmin() {
@@ -99,7 +103,7 @@ func Main(args []string) {
 			log.Fatalf("ip %v: %v: %s", args, err, out)
 		}
 	}
-	must("link", "set", "dev", td.Name, "mtu", fmt.Sprint(mtu))
+	must("link", "set", "dev", td.Name, "mtu", fmt.Sprint(*mtu))
 	must("addr", "replace", hostAddr, "dev", td.Name)
 	must("link", "set", "dev", td.Name, "up")
 	if *v6 {
