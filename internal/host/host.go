@@ -123,6 +123,12 @@ func Main(args []string) {
 		must("route", "replace", *hostRoute, "dev", td.Name)
 	}
 	log.Printf("tun %s up %s (route=%v hostroute=%q)", td.Name, hostAddr, *route, *hostRoute)
+	readMode := fmt.Sprintf("%d queued reads", *urbs)
+	if *urbs <= 0 {
+		readMode = "one read at a time"
+	}
+	log.Printf("settings: mtu=%d (default %d)  urbs=%d (%s)  ipv6=%v  default-route=%v",
+		*mtu, defaultMTU, *urbs, readMode, *v6, *route)
 
 	if *drop {
 		if err := dropPrivileges(); err != nil {
