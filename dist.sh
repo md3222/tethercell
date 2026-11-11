@@ -12,7 +12,7 @@ export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}
 export PATH=$PATH:$HOME/go/bin
 
 if [ "${1:-}" != --skip-apk ]; then
-  (cd phone-app
+  (cd phone-app && mkdir -p build
    gomobile bind -target=android/arm64 -androidapi 29 -javapkg com.matt.usbtether -o build/core.aar ./core
    rm -rf build/aar && unzip -o -q build/core.aar -d build/aar
    ./build-apk.sh)
