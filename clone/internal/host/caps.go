@@ -11,7 +11,7 @@ import (
 	"time"
 	"unsafe"
 
-	"tetrd-clone/internal/usbdev"
+	"usbtether/internal/usbdev"
 )
 
 // Unprivileged mode: the installed binary carries the file capability cap_net_admin+ep

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"tetrd-clone/internal/tun"
+	"usbtether/internal/tun"
 )
 
 // SelfTest checks the unprivileged path without the phone and without routes: create a scratch

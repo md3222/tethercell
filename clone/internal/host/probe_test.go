@@ -3,7 +3,7 @@ package host
 import (
 	"testing"
 
-	"tetrd-clone/internal/frame"
+	"usbtether/internal/frame"
 )
 
 func TestProbeIsValidEcho(t *testing.T) {

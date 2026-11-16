@@ -21,9 +21,9 @@ import (
 	"syscall"
 	"time"
 
-	"tetrd-clone/internal/frame"
-	"tetrd-clone/internal/tun"
-	"tetrd-clone/internal/usbdev"
+	"usbtether/internal/frame"
+	"usbtether/internal/tun"
+	"usbtether/internal/usbdev"
 )
 
 const (
@@ -36,7 +36,7 @@ const (
 // 0 = stopped, 3 = tunnel died after working, 4 = never delivered, 1 = start failed.
 func Main(args []string) {
 	fs := flag.NewFlagSet("usbtether run", flag.ExitOnError)
-	iface := fs.String("iface", "mxtun0", "TUN interface name (never tetrd0)")
+	iface := fs.String("iface", "mxtun0", "TUN interface name")
 	hostRoute := fs.String("hostroute", "", "install ONE route, e.g. 1.1.1.1/32, via the TUN")
 	route := fs.Bool("route", false, "install a default route via the TUN (metric 50: wins over wlan0)")
 	serial := fs.String("serial", "", "USB serial of the phone in normal mode")
@@ -46,7 +46,6 @@ func Main(args []string) {
 	wedgeAfter := fs.Duration("wedge-after", 6*time.Second, "declare the tunnel dead if every USB write has timed out for this long")
 	clearHalt := fs.Bool("clear-halt", true, "CLEAR_HALT both bulk endpoints on attach (resets data toggles)")
 	reuse := fs.Bool("reuse", false, "attach to a phone already in accessory mode (our identity) instead of requiring a replug")
-	probe := fs.String("probe-profile", "", "DIAGNOSTIC: 'tetrd' sends the stock app identity to test whether the phone switches at all")
 	mtu := fs.Int("mtu", defaultMTU, "TUN MTU (576-16000); 1400 = pre-v3 packet sizes both ways, the phone follows the host's MSS")
 	urbs := fs.Int("urbs", 8, "bulk-IN reads kept queued (async usbfs URBs); 0 = old one-at-a-time BulkRead")
 	wait := fs.Duration("wait", 20*time.Second, "wait for the accessory to enumerate")
@@ -60,7 +59,6 @@ func Main(args []string) {
 	if os.Geteuid() != 0 && !HasNetAdmin() {
 		log.Fatal("needs CAP_NET_ADMIN (run the installed /usr/local/bin/usbtether, see 'usbtether setup') or root")
 	}
-	probeProfile = *probe
 	reuseAcc = *reuse
 	dev, err := acquire(*serial, *wait)
 	if err != nil {
@@ -372,8 +370,6 @@ func tunToUSB(d *usbdev.Device, td *tun.Device, stop <-chan struct{}) error {
 	}
 }
 
-var probeProfile string
-
 // unanswered = unix-nano of the first packet sent since we last heard from the phone (0 = none pending).
 var unanswered atomic.Int64
 
@@ -457,9 +453,6 @@ func acquire(serial string, wait time.Duration) (*usbdev.Device, error) {
 		i uint16
 		s string
 	}{{5, "mx-host-1"}, {0, "mxlab"}, {1, "usbtether"}, {2, "mx usb tether"}, {3, "1"}, {4, "https://localhost/"}}
-	if probeProfile == "tetrd" {
-		strs[0].s, strs[1].s, strs[2].s, strs[3].s, strs[4].s, strs[5].s = "MTkyNjU5MDI3MQpTQU1TVU5HX0FuZHJvaWQKMTc5Mjk2NjM4NDUwMQ", "robskie", "tether", "Tetrd USB Accessory", "1.0", "https://www.tetrd.app"
-	}
 	for _, s := range strs {
 		if err := d.SendString(s.i, s.s); err != nil {
 			d.Close()

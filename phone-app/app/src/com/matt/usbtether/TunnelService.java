@@ -77,7 +77,7 @@ public class TunnelService extends Service {
         Notification n = new Notification.Builder(this, "tun")
             .setContentTitle("USB tether active")
             .setContentText("Tap for status")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setSmallIcon(R.drawable.ic_stat_tether)
             .setContentIntent(android.app.PendingIntent.getActivity(this, 0,
                 new Intent(this, MainActivity.class).setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
                 android.app.PendingIntent.FLAG_IMMUTABLE))

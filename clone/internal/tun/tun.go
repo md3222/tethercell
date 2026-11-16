@@ -68,8 +68,8 @@ func runIP(args ...string) error {
 }
 
 // Configure brings the interface up and assigns addresses. If route is true,
-// default routes through the device are installed (metric 1024, matching the
-// daemon's tetrd0 setup) so the phone becomes the exit node.
+// default routes through the device are installed (metric 1024; the host's
+// -route flag installs its own at metric 50) so the phone becomes the exit node.
 func (d *Device) Configure(v4, v6 string, mtu int, route bool) error {
 	cmds := [][]string{
 		{"link", "set", "dev", d.Name, "mtu", strconv.Itoa(mtu)},

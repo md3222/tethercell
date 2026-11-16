@@ -1,3 +1,3 @@
-module tetrd-clone
+module usbtether
 
 go 1.24

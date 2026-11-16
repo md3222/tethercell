@@ -5,7 +5,7 @@ package main
 import (
 	"os"
 
-	"tetrd-clone/internal/host"
+	"usbtether/internal/host"
 )
 
 func main() { host.Main(os.Args[1:]) }

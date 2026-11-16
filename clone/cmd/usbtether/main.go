@@ -29,7 +29,7 @@ import (
 	"syscall"
 	"time"
 
-	"tetrd-clone/internal/host"
+	"usbtether/internal/host"
 )
 
 const (
@@ -69,10 +69,9 @@ func main() {
 	case "run":
 		host.Main(args)
 	case "up":
-		if len(args) == 0 {
-			args = []string{"-route", "-v6"}
-		}
-		os.Exit(up(args))
+		// Defaults always apply; extra flags add to them (a bare "up -mtu 1400" used to drop
+		// -route, leaving a live tunnel nothing was routed into). Opt out: -route=false / -v6=false.
+		os.Exit(up(append([]string{"-route", "-v6"}, args...)))
 	case "setup":
 		os.Exit(setup())
 	case "phone":
@@ -161,11 +160,7 @@ func up(hostArgs []string) int {
 	if fileExists("/sys/class/net/" + tunName) {
 		// A non-persistent TUN exists only while a process holds it: another host is live. Never
 		// adb-install over it (that kills the phone side) or fight it for the phone.
-		fmt.Fprintln(os.Stderr, "usbtether: a tunnel is already up ("+tunName+", old usbtether-host wrapper?): stop it first (Ctrl-C in its window)")
-		return 1
-	}
-	if tetrdRunning() {
-		fmt.Fprintln(os.Stderr, "usbtether: stock Tetrd is running and holds the phone. Quit Tetrd (tray -> Quit), replug once, rerun.")
+		fmt.Fprintln(os.Stderr, "usbtether: another tunnel is already up ("+tunName+"): stop it first (Ctrl-C in its window)")
 		return 1
 	}
 	stateDir := filepath.Join(os.Getenv("HOME"), ".local/state/usbtether")
@@ -330,17 +325,6 @@ func accessoryPresent() bool {
 		v, _ := os.ReadFile(m)
 		p, _ := os.ReadFile(filepath.Join(filepath.Dir(m), "idProduct"))
 		if strings.TrimSpace(string(v)) == "18d1" && strings.HasPrefix(strings.TrimSpace(string(p)), "2d0") {
-			return true
-		}
-	}
-	return false
-}
-
-func tetrdRunning() bool {
-	ms, _ := filepath.Glob("/proc/[0-9]*/cmdline")
-	for _, m := range ms {
-		b, _ := os.ReadFile(m)
-		if bytes.HasPrefix(b, []byte("/opt/Tetrd/bin/tetrd")) {
 			return true
 		}
 	}
@@ -595,5 +579,4 @@ func status() {
 	if out, _ := exec.Command("ip", "route", "show", "default").Output(); len(out) > 0 {
 		row("default route", strings.ReplaceAll(strings.TrimSpace(string(out)), "\n", " | "))
 	}
-	row("stock Tetrd", map[bool]string{true: "RUNNING (quit it before usbtether)", false: "not running"}[tetrdRunning()])
 }

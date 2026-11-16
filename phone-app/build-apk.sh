@@ -15,8 +15,9 @@ KS=${USBTETHER_KS:-$(cd .. && pwd)/keys/usbtether.keystore}
   -alias dbg -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=mx usbtether" >/dev/null 2>&1; }
 $BT/aapt2 compile --dir app/res -o $B/res-compiled
 $BT/aapt2 link -o $B/base.apk -I $JAR --manifest app/AndroidManifest.xml \
-  --min-sdk-version 29 --target-sdk-version 36 $B/res-compiled/*.flat
-javac --release 17 -cp $JAR:build/aar/classes.jar -d $B/classes $(find app/src -name '*.java')
+  --min-sdk-version 29 --target-sdk-version 36 --java $B/rjava $B/res-compiled/*.flat
+javac --release 17 -cp $JAR:build/aar/classes.jar -d $B/classes \
+  $(find app/src $B/rjava -name '*.java')
 $BT/d8 --release --min-api 29 --lib $JAR --output $B $(find $B/classes -name '*.class') build/aar/classes.jar
 cp $B/base.apk $B/unsigned.apk
 ( cd $B && zip -q unsigned.apk classes.dex )
