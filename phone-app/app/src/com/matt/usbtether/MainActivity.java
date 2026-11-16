@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad * 2, pad, pad);
         root.setBackgroundColor(0xff0f172a);
 
-        TextView title = text("USB Tether (mine)", 24, 0xff22d3ee);
+        TextView title = text("USB Tether", 24, 0xff22d3ee);
         title.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         state = text("", 18, Color.WHITE);
         stats = text("", 14, 0xff94a3b8);
