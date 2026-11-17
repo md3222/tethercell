@@ -16,6 +16,16 @@ Releases (binary + APK + SHA256SUMS): <https://github.com/md3222/tethercell/rele
 
 Linux x86-64 for the desktop; Android 10+ for the phone; no root on either side.
 
+## Screenshots
+
+| Desktop GUI | Phone app |
+|---|---|
+| ![TetherCell GUI](docs/screenshots/gui.png) | ![TetherCell phone app](docs/screenshots/phone.png) |
+
+Eight palettes under **View**:
+
+![Themes](docs/screenshots/themes.png)
+
 
 | dir | what |
 |---|---|

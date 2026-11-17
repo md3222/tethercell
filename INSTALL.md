@@ -108,6 +108,8 @@ Phone: uninstall **TetherCell** like any app.
 
 ## Notes
 
+- **No carrier-side bypass.** The phone re-dials every flow from its own sockets, so the
+  traffic looks like ordinary phone data. An account-level tethering block is unaffected.
 - Original code (Go desktop, Java + gomobile phone app). Not affiliated with Tetrd; it only
   borrows the AOA idea, and claims its own accessory identity so the two never fight.
 - The APK in the release is signed with a self-signed key, so it sideloads but will not update
