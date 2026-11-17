@@ -21,7 +21,11 @@ VC=$(grep -o 'android:versionCode="[0-9]*"' phone-app/app/AndroidManifest.xml | 
 A=clone/cmd/tethercell/assets
 cp phone-app/build/tethercell.apk $A/tethercell.apk
 echo "$VC" > $A/apk_version.txt
-VER="$(date +%Y%m%d)-$(git -C clone rev-parse --short HEAD)$(git -C clone diff --quiet HEAD -- . 2>/dev/null || echo -dirty)"
+if TAG=$(git describe --tags --exact-match 2>/dev/null); then
+  VER="$TAG"
+else
+  VER="$(date +%Y%m%d)-$(git -C clone rev-parse --short HEAD)$(git -C clone diff --quiet HEAD -- . 2>/dev/null || echo -dirty)"
+fi
 mkdir -p dist
 (cd clone && go test ./internal/... >/dev/null && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VER" -o "$R/dist/tethercell" ./cmd/tethercell)
 cp phone-app/build/tethercell.apk dist/tethercell.apk
