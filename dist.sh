@@ -1,8 +1,8 @@
 #!/bin/bash
 # Build both halves into one self-contained desktop binary:
 #   phone-app (gomobile core + APK, signed with keys/usbtether.keystore) -> embedded into
-#   clone/cmd/usbtether -> dist/usbtether (static, CGO_ENABLED=0) + dist/usbtether.apk + SHA256SUMS
-# Then: dist/usbtether setup   (once per desktop; one password popup)
+#   clone/cmd/tethercell -> dist/tethercell (static, CGO_ENABLED=0) + dist/tethercell.apk + SHA256SUMS
+# Then: dist/tethercell setup   (once per desktop; one password popup)
 set -euo pipefail
 cd "$(dirname "$0")"
 R=$PWD
@@ -13,17 +13,17 @@ export PATH=$PATH:$HOME/go/bin
 
 if [ "${1:-}" != --skip-apk ]; then
   (cd phone-app && mkdir -p build
-   gomobile bind -target=android/arm64 -androidapi 29 -javapkg com.matt.usbtether -o build/core.aar ./core
+   gomobile bind -target=android/arm64 -androidapi 29 -javapkg com.matt.tethercell -o build/core.aar ./core
    rm -rf build/aar && unzip -o -q build/core.aar -d build/aar
    ./build-apk.sh)
 fi
 VC=$(grep -o 'android:versionCode="[0-9]*"' phone-app/app/AndroidManifest.xml | grep -o '[0-9]*')
-A=clone/cmd/usbtether/assets
-cp phone-app/build/usbtether.apk $A/usbtether.apk
+A=clone/cmd/tethercell/assets
+cp phone-app/build/tethercell.apk $A/tethercell.apk
 echo "$VC" > $A/apk_version.txt
 VER="$(date +%Y%m%d)-$(git -C clone rev-parse --short HEAD)$(git -C clone diff --quiet HEAD -- . 2>/dev/null || echo -dirty)"
 mkdir -p dist
-(cd clone && go test ./internal/... >/dev/null && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VER" -o "$R/dist/usbtether" ./cmd/usbtether)
-cp phone-app/build/usbtether.apk dist/usbtether.apk
-(cd dist && sha256sum usbtether usbtether.apk > SHA256SUMS)
-ls -la dist; dist/usbtether version
+(cd clone && go test ./internal/... >/dev/null && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VER" -o "$R/dist/tethercell" ./cmd/tethercell)
+cp phone-app/build/tethercell.apk dist/tethercell.apk
+(cd dist && sha256sum tethercell tethercell.apk > SHA256SUMS)
+ls -la dist; dist/tethercell version

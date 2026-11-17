@@ -3,7 +3,7 @@ package host
 import (
 	"testing"
 
-	"usbtether/internal/frame"
+	"tethercell/internal/frame"
 )
 
 func TestProbeIsValidEcho(t *testing.T) {

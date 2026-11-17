@@ -1,3 +1,5 @@
+> **Renamed 2026-11-16:** this plan was written as `usbtether` / `com.matt.usbtether` / `mxtun0`. The shipped project is now **TetherCell**: `tethercell`, `com.matt.tethercell`, `tcell0`. Old names below are kept as the historical log.
+
 # tetrd-clone phone app — plan (2026-11-01)
 
 Decision: Option 2 — build an original Android app for the phone side, replacing

@@ -1,4 +1,4 @@
-package com.matt.usbtether;
+package com.matt.tethercell;
 
 import android.Manifest;
 import android.app.Activity;
@@ -60,11 +60,11 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad * 2, pad, pad);
         root.setBackgroundColor(0xff0f172a);
 
-        TextView title = text("USB Tether", 24, 0xff22d3ee);
+        TextView title = text("TetherCell", 24, 0xff22d3ee);
         title.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         state = text("", 18, Color.WHITE);
         stats = text("", 14, 0xff94a3b8);
-        TextView help = text("Plug into the PC and run  usbtether  there.\n"
+        TextView help = text("Plug into the PC and run  tethercell  there.\n"
                 + "The PC switches this phone into accessory mode and starts the tunnel by itself.\n"
                 + "Keep the screen unlocked for the first attach.", 14, 0xff94a3b8);
 
@@ -98,11 +98,11 @@ public class MainActivity extends Activity {
 
     private void refresh() {
         if (!visible) return;
-        boolean up = com.matt.usbtether.core.Core.running();
+        boolean up = com.matt.tethercell.core.Core.running();
         String acc = TunnelService.accessoryAttached(this) ? "PC attached (accessory mode)" : "PC not attached";
         state.setText((up ? "● Tunnel running" : "○ Tunnel idle") + "\n" + acc);
         state.setTextColor(up ? 0xff84cc16 : 0xfff87171);
-        stats.setText(com.matt.usbtether.core.Core.stats());
+        stats.setText(com.matt.tethercell.core.Core.stats());
     }
 
     private final Runnable tick = new Runnable() {

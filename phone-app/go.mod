@@ -1,4 +1,4 @@
-module tetrd-phone-core
+module tethercell-core
 
 go 1.27.3
 

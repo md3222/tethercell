@@ -11,11 +11,11 @@ import (
 	"time"
 	"unsafe"
 
-	"usbtether/internal/usbdev"
+	"tethercell/internal/usbdev"
 )
 
 // Unprivileged mode: the installed binary carries the file capability cap_net_admin+ep
-// (usbtether setup) and udev gives the logged-in user the phone's USB node, so no root
+// (tethercell setup) and udev gives the logged-in user the phone's USB node, so no root
 // process exists at all. ip(8) children get CAP_NET_ADMIN as an ambient capability.
 
 const capNetAdmin = 12
@@ -88,7 +88,7 @@ func openRetry(info usbdev.Info, claim bool) (*usbdev.Device, error) {
 		d, err := usbdev.Open(info, claim)
 		if err == nil || !errors.Is(err, os.ErrPermission) || time.Now().After(deadline) {
 			if err != nil && errors.Is(err, os.ErrPermission) {
-				log.Printf("no permission on %s: run 'usbtether setup' (installs the udev rule)", info.Path())
+				log.Printf("no permission on %s: run 'tethercell setup' (installs the udev rule)", info.Path())
 			}
 			return d, err
 		}

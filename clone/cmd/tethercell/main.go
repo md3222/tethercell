@@ -1,13 +1,13 @@
-// Command usbtether is the all-in-one desktop app for Matt's own USB tether.
+// Command tethercell is the all-in-one desktop app for Matt's own USB tether.
 //
-//	usbtether                 = usbtether up -route -v6 (supervised, auto-reconnect)
-//	usbtether up [flags]      supervisor: phone-app check/install, start, reconnect on exit 3/4
-//	usbtether run [flags]     bare host (needs CAP_NET_ADMIN or root); what "up" runs each time
-//	usbtether setup           one password popup: install to /usr/local/bin + cap_net_admin + udev rule,
+//	tethercell                 = tethercell up -route -v6 (supervised, auto-reconnect)
+//	tethercell up [flags]      supervisor: phone-app check/install, start, reconnect on exit 3/4
+//	tethercell run [flags]     bare host (needs CAP_NET_ADMIN or root); what "up" runs each time
+//	tethercell setup           one password popup: install to /usr/local/bin + cap_net_admin + udev rule,
 //	                          then (as you) NM profile + menu launcher
-//	usbtether phone           install/update the embedded phone app over adb
-//	usbtether apk [file]      write the embedded APK (for installing without adb after a wipe)
-//	usbtether status          what is installed / attached / running
+//	tethercell phone           install/update the embedded phone app over adb
+//	tethercell apk [file]      write the embedded APK (for installing without adb after a wipe)
+//	tethercell status          what is installed / attached / running
 //
 // The phone APK is embedded at build time (dist.sh), so this one file restores both halves.
 // No root process: the installed binary carries cap_net_admin and drops it after bring-up.
@@ -29,30 +29,30 @@ import (
 	"syscall"
 	"time"
 
-	"usbtether/internal/host"
+	"tethercell/internal/host"
 )
 
 const (
-	installPath = "/usr/local/bin/usbtether"
-	pkg         = "com.matt.usbtether"
+	installPath = "/usr/local/bin/tethercell"
+	pkg         = "com.matt.tethercell"
 	activity    = pkg + "/.MainActivity"
-	tunName     = "mxtun0"
-	udevPath    = "/etc/udev/rules.d/70-usbtether.rules"
+	tunName     = "tcell0"
+	udevPath    = "/etc/udev/rules.d/70-tethercell.rules"
 )
 
-// assets/ holds usbtether.apk + apk_version.txt, copied in by dist.sh (gitignored); README keeps
+// assets/ holds tethercell.apk + apk_version.txt, copied in by dist.sh (gitignored); README keeps
 // the pattern valid in a fresh checkout, where the binary then simply has no phone app inside.
 //
 //go:embed assets/*
 var assets embed.FS
 
-var apk, _ = assets.ReadFile("assets/usbtether.apk")
+var apk, _ = assets.ReadFile("assets/tethercell.apk")
 
 var apkVersionRaw = func() string { b, _ := assets.ReadFile("assets/apk_version.txt"); return string(b) }()
 
 var version = "dev" // -ldflags "-X main.version=..."
 
-const udevRules = `# usbtether: give the logged-in user the phone's USB node (AOA switch + accessory bulk I/O).
+const udevRules = `# tethercell: give the logged-in user the phone's USB node (AOA switch + accessory bulk I/O).
 SUBSYSTEM=="usb", ATTR{idVendor}=="04e8", TAG+="uaccess"
 SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", ATTR{idProduct}=="2d0[0-5]", TAG+="uaccess"
 `
@@ -76,13 +76,13 @@ func main() {
 		os.Exit(setup())
 	case "phone":
 		if !adbReady() {
-			fail("adb sees no authorized phone: enable USB debugging and accept the RSA prompt (or use 'usbtether apk')")
+			fail("adb sees no authorized phone: enable USB debugging and accept the RSA prompt (or use 'tethercell apk')")
 		}
 		if err := installApp(true); err != nil {
 			fail(err.Error())
 		}
 	case "apk":
-		out := filepath.Join(os.Getenv("HOME"), "usbtether.apk")
+		out := filepath.Join(os.Getenv("HOME"), "tethercell.apk")
 		if len(args) > 0 {
 			out = args[0]
 		}
@@ -90,7 +90,7 @@ func main() {
 			fail(err.Error())
 		}
 		fmt.Printf("wrote %s (versionCode %d). Copy it to the phone (USB file transfer), open it in Files,\n"+
-			"allow \"install unknown apps\" for Files when asked. Then plug in and run usbtether.\n", out, apkVersion())
+			"allow \"install unknown apps\" for Files when asked. Then plug in and run tethercell.\n", out, apkVersion())
 	case "status":
 		status()
 	case "selftest":
@@ -98,37 +98,37 @@ func main() {
 			fail("selftest: " + err.Error())
 		}
 	case "version", "-version", "--version":
-		fmt.Printf("usbtether %s, embedded phone app versionCode %d (%d bytes)\n", version, apkVersion(), len(apk))
+		fmt.Printf("tethercell %s, embedded phone app versionCode %d (%d bytes)\n", version, apkVersion(), len(apk))
 	case "help", "-h", "--help":
 		fmt.Print(helpText)
 	default:
-		fail("unknown command " + cmd + " (try: usbtether help)")
+		fail("unknown command " + cmd + " (try: tethercell help)")
 	}
 }
 
-const helpText = `usbtether - own USB tether (phone app com.matt.usbtether + this desktop host)
+const helpText = `tethercell - own USB tether (phone app com.matt.tethercell + this desktop host)
 
-  usbtether               connect (default route + IPv6), reconnect by itself; Ctrl-C stops
-  usbtether up [flags]    same with your own host flags, e.g. up -hostroute 1.1.1.1/32
-  usbtether setup         one-time install on this desktop (one password popup)
-  usbtether phone         install/update the phone app over adb
-  usbtether apk [file]    save the phone app as an .apk (install without adb)
-  usbtether status        show what is installed/attached/running
-  usbtether selftest      check the no-root path (scratch TUN, no phone, no routes)
-  usbtether run -h        host flags
+  tethercell               connect (default route + IPv6), reconnect by itself; Ctrl-C stops
+  tethercell up [flags]    same with your own host flags, e.g. up -hostroute 1.1.1.1/32
+  tethercell setup         one-time install on this desktop (one password popup)
+  tethercell phone         install/update the phone app over adb
+  tethercell apk [file]    save the phone app as an .apk (install without adb)
+  tethercell status        show what is installed/attached/running
+  tethercell selftest      check the no-root path (scratch TUN, no phone, no routes)
+  tethercell run -h        host flags
 
-After a phone wipe:  enable Developer options > USB debugging, plug in, accept the prompt, run usbtether.
-Without USB debugging: usbtether apk, copy ~/usbtether.apk to the phone, install it, run usbtether.
+After a phone wipe:  enable Developer options > USB debugging, plug in, accept the prompt, run tethercell.
+Without USB debugging: tethercell apk, copy ~/tethercell.apk to the phone, install it, run tethercell.
 `
 
-func fail(msg string) { fmt.Fprintln(os.Stderr, "usbtether: "+msg); os.Exit(1) }
+func fail(msg string) { fmt.Fprintln(os.Stderr, "tethercell: "+msg); os.Exit(1) }
 
 // ---------- supervisor ----------
 
 var logf *os.File
 
 func say(format string, a ...any) {
-	line := fmt.Sprintf("usbtether: "+format, a...)
+	line := fmt.Sprintf("tethercell: "+format, a...)
 	fmt.Println(line)
 	if logf != nil {
 		fmt.Fprintf(logf, "%s %s\n", time.Now().Format("2006/01/02 15:04:05"), line)
@@ -137,7 +137,7 @@ func say(format string, a ...any) {
 
 func up(hostArgs []string) int {
 	if os.Geteuid() == 0 {
-		fmt.Fprintln(os.Stderr, "usbtether: run me as your user, not root (adb keys + no root process)")
+		fmt.Fprintln(os.Stderr, "tethercell: run me as your user, not root (adb keys + no root process)")
 		return 1
 	}
 	exe, err := os.Executable()
@@ -149,7 +149,7 @@ func up(hostArgs []string) int {
 			// a dev copy was started: hand over to the installed (capability-carrying) one
 			return execInstalled(append([]string{"up"}, hostArgs...))
 		}
-		fmt.Fprintln(os.Stderr, "usbtether: not installed with cap_net_admin yet: run 'usbtether setup' once")
+		fmt.Fprintln(os.Stderr, "tethercell: not installed with cap_net_admin yet: run 'tethercell setup' once")
 		return 1
 	}
 	// The supervisor itself needs no privilege. Clear caps (but NOT no_new_privs, or the
@@ -160,10 +160,10 @@ func up(hostArgs []string) int {
 	if fileExists("/sys/class/net/" + tunName) {
 		// A non-persistent TUN exists only while a process holds it: another host is live. Never
 		// adb-install over it (that kills the phone side) or fight it for the phone.
-		fmt.Fprintln(os.Stderr, "usbtether: another tunnel is already up ("+tunName+"): stop it first (Ctrl-C in its window)")
+		fmt.Fprintln(os.Stderr, "tethercell: another tunnel is already up ("+tunName+"): stop it first (Ctrl-C in its window)")
 		return 1
 	}
-	stateDir := filepath.Join(os.Getenv("HOME"), ".local/state/usbtether")
+	stateDir := filepath.Join(os.Getenv("HOME"), ".local/state/tethercell")
 	_ = os.MkdirAll(stateDir, 0o700)
 	if f, err := os.OpenFile(filepath.Join(stateDir, "host.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
 		logf = f
@@ -225,7 +225,7 @@ func up(hostArgs []string) int {
 			fails, dead4, fresh, delay = 0, 0, false, 2*time.Second
 			say("tunnel died, reconnecting in %s (Wi-Fi carries traffic meanwhile)", delay)
 		case 2:
-			say("bad host flags (see: usbtether run -h)")
+			say("bad host flags (see: tethercell run -h)")
 			return 2
 		case 4:
 			dead4++
@@ -303,7 +303,7 @@ func runHost(exe string, args []string, sig chan os.Signal) (rc int, stopped boo
 
 func execInstalled(args []string) int {
 	err := syscall.Exec(installPath, append([]string{installPath}, args...), os.Environ())
-	fmt.Fprintln(os.Stderr, "usbtether: exec", installPath, err)
+	fmt.Fprintln(os.Stderr, "tethercell: exec", installPath, err)
 	return 1
 }
 
@@ -396,7 +396,7 @@ func installApp(force bool) error {
 	if have >= 0 && accessoryPresent() {
 		say("note: updating the phone app ends any running tunnel session")
 	}
-	f, err := os.CreateTemp("", "usbtether-*.apk")
+	f, err := os.CreateTemp("", "tethercell-*.apk")
 	if err != nil {
 		return err
 	}
@@ -432,15 +432,15 @@ func setup() int {
 	if _, err := exec.LookPath("setcap"); err != nil {
 		fail("setcap missing: sudo apt install libcap2-bin")
 	}
-	tmp, err := os.MkdirTemp("", "usbtether-setup-")
+	tmp, err := os.MkdirTemp("", "tethercell-setup-")
 	if err != nil {
 		fail(err.Error())
 	}
 	defer os.RemoveAll(tmp)
-	rules := filepath.Join(tmp, "70-usbtether.rules")
+	rules := filepath.Join(tmp, "70-tethercell.rules")
 	_ = os.WriteFile(rules, []byte(udevRules), 0o644)
 	// Copy the binary first: installing a file onto itself (setup run from /usr/local/bin) would truncate it.
-	bin := filepath.Join(tmp, "usbtether")
+	bin := filepath.Join(tmp, "tethercell")
 	if b, err := os.ReadFile(exe); err != nil || os.WriteFile(bin, b, 0o755) != nil {
 		fail("copy self failed")
 	}
@@ -461,7 +461,7 @@ echo "installed: $(getcap `+installPath+`)"
 	} else {
 		esc = []string{"sudo"}
 	}
-	fmt.Println("usbtether: one password prompt: install", installPath, "+ cap_net_admin + udev rule")
+	fmt.Println("tethercell: one password prompt: install", installPath, "+ cap_net_admin + udev rule")
 	c := exec.Command(esc[0], append(esc[1:], "/bin/sh", script, bin, rules)...)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := c.Run(); err != nil {
@@ -469,20 +469,20 @@ echo "installed: $(getcap `+installPath+`)"
 	}
 	nmProfile()
 	launcher()
-	fmt.Print("\nusbtether: setup done. Connect with: usbtether   (or the \"USB Tether\" menu entry).\nFirst time on this desktop: replug the phone once so the new udev rule applies.\n")
+	fmt.Print("\ntethercell: setup done. Connect with: tethercell   (or the \"USB Tether\" menu entry).\nFirst time on this desktop: replug the phone once so the new udev rule applies.\n")
 	return 0
 }
 
-// nmProfile creates the "usbtether" NetworkManager profile (DNS via the tunnel) if missing.
+// nmProfile creates the "tethercell" NetworkManager profile (DNS via the tunnel) if missing.
 func nmProfile() {
 	if _, err := exec.LookPath("nmcli"); err != nil {
 		return
 	}
-	if out, err := exec.Command("nmcli", "-g", "connection.id", "con", "show", "usbtether").Output(); err == nil && len(out) > 0 {
-		fmt.Println("usbtether: NetworkManager profile usbtether exists")
+	if out, err := exec.Command("nmcli", "-g", "connection.id", "con", "show", "tethercell").Output(); err == nil && len(out) > 0 {
+		fmt.Println("tethercell: NetworkManager profile tethercell exists")
 		return
 	}
-	out, err := exec.Command("nmcli", "con", "add", "type", "tun", "con-name", "usbtether", "ifname", tunName,
+	out, err := exec.Command("nmcli", "con", "add", "type", "tun", "con-name", "tethercell", "ifname", tunName,
 		"tun.mode", "1", "connection.autoconnect", "no",
 		"ipv4.method", "manual", "ipv4.addresses", "10.77.0.1/24", "ipv4.dns", "1.1.1.1,8.8.8.8",
 		"ipv4.never-default", "yes", "ipv4.dns-priority", "-100",
@@ -490,10 +490,10 @@ func nmProfile() {
 		"ipv6.dns", "2606:4700:4700::1111,2001:4860:4860::8888", "ipv6.never-default", "yes", "ipv6.dns-priority", "-100",
 	).CombinedOutput()
 	if err != nil {
-		fmt.Printf("usbtether: NM profile not created (%v: %s); DNS then stays on the other link\n", err, strings.TrimSpace(string(out)))
+		fmt.Printf("tethercell: NM profile not created (%v: %s); DNS then stays on the other link\n", err, strings.TrimSpace(string(out)))
 		return
 	}
-	fmt.Println("usbtether: created NetworkManager profile usbtether (DNS via tunnel)")
+	fmt.Println("tethercell: created NetworkManager profile tethercell (DNS via tunnel)")
 }
 
 func launcher() {
@@ -505,20 +505,20 @@ func launcher() {
 		}
 	}
 	if term == "" {
-		fmt.Println("usbtether: no terminal found, skipped the menu launcher")
+		fmt.Println("tethercell: no terminal found, skipped the menu launcher")
 		return
 	}
 	run := term + " -e " + installPath
 	if strings.HasSuffix(term, "/konsole") {
-		run = term + " --hide-menubar -p tabtitle=usbtether -e " + installPath
+		run = term + " --hide-menubar -p tabtitle=tethercell -e " + installPath
 	}
 	dir := filepath.Join(os.Getenv("HOME"), ".local/share/applications")
 	_ = os.MkdirAll(dir, 0o755)
-	p := filepath.Join(dir, "usbtether.desktop")
+	p := filepath.Join(dir, "tethercell-terminal.desktop")
 	err := os.WriteFile(p, []byte(`[Desktop Entry]
 Type=Application
-Name=USB Tether
-Comment=Own USB tether through the phone (com.matt.usbtether); close the window or Ctrl-C to stop
+Name=TetherCell (terminal)
+Comment=Own USB tether through the phone (com.matt.tethercell); close the window or Ctrl-C to stop
 Exec=`+run+`
 Icon=network-wired
 Terminal=false
@@ -530,7 +530,7 @@ Name=Status
 Exec=`+term+` --hold -e `+installPath+` status
 `), 0o644)
 	if err == nil {
-		fmt.Println("usbtether: menu launcher", p)
+		fmt.Println("tethercell: menu launcher", p)
 	}
 }
 
@@ -542,11 +542,11 @@ func status() {
 	if out, err := exec.Command("getcap", installPath).Output(); err == nil && len(out) > 0 {
 		row("installed", strings.TrimSpace(string(out)))
 	} else if fileExists(installPath) {
-		row("installed", installPath+" WITHOUT cap_net_admin: run usbtether setup")
+		row("installed", installPath+" WITHOUT cap_net_admin: run tethercell setup")
 	} else {
-		row("installed", "no: run usbtether setup")
+		row("installed", "no: run tethercell setup")
 	}
-	row("udev rule", map[bool]string{true: udevPath, false: "missing: run usbtether setup"}[fileExists(udevPath)])
+	row("udev rule", map[bool]string{true: udevPath, false: "missing: run tethercell setup"}[fileExists(udevPath)])
 	usb := "not attached"
 	if accessoryPresent() {
 		usb = "accessory mode (18d1:2d0x)"
@@ -558,11 +558,11 @@ func status() {
 		v := phoneAppVersion()
 		s := fmt.Sprintf("versionCode %d", v)
 		if v == -1 {
-			s = "NOT installed: usbtether phone"
+			s = "NOT installed: tethercell phone"
 		} else if v == -2 {
 			s = "adb error"
 		} else if v < apkVersion() {
-			s += fmt.Sprintf(" (older than embedded %d: usbtether phone)", apkVersion())
+			s += fmt.Sprintf(" (older than embedded %d: tethercell phone)", apkVersion())
 		}
 		row("phone app", s)
 	} else {

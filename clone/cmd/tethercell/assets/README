@@ -1,0 +1,1 @@
+dist.sh copies tethercell.apk + apk_version.txt here before go build (gitignored).

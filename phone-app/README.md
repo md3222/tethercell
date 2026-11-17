@@ -1,42 +1,42 @@
-# usbtether (phone app + core)
+# tethercell (phone app + core)
 
 ## The app (2026-11-03): one desktop binary, phone app inside
 ```bash
-~/work/tetrd-re/dist.sh                 # build APK + dist/usbtether (APK embedded), SHA256SUMS
-~/work/tetrd-re/dist/usbtether setup    # once per desktop: one popup -> /usr/local/bin/usbtether
+~/work/tetrd-re/dist.sh                 # build APK + dist/tethercell (APK embedded), SHA256SUMS
+~/work/tetrd-re/dist/tethercell setup    # once per desktop: one popup -> /usr/local/bin/tethercell
                                         # (cap_net_admin, no root process) + udev uaccess rule; NM profile + menu entry
-usbtether                               # = up -route -v6: installs/updates the phone app over adb, connects, reconnects
-usbtether status | phone | apk [file] | selftest | run -h
+tethercell                               # = up -route -v6: installs/updates the phone app over adb, connects, reconnects
+tethercell status | phone | apk [file] | selftest | run -h
 ```
-- Phone wiped: enable USB debugging, plug in, accept the RSA prompt, run `usbtether` (installs the app itself).
-  No USB debugging: `usbtether apk`, copy `~/usbtether.apk` to the phone, install it from Files. Android opens the app
+- Phone wiped: enable USB debugging, plug in, accept the RSA prompt, run `tethercell` (installs the app itself).
+  No USB debugging: `tethercell apk`, copy `~/tethercell.apk` to the phone, install it from Files. Android opens the app
   on attach (accessory filter); tap OK if it asks.
 - First attach after an install: Android asks "Open USB Tether for this accessory?" -> tick *Always*, OK.
   Without that grant the service started over adb cannot open the accessory.
 - If adb or the APK install is refused after a wipe, check Samsung Auto Blocker (Settings > Security and privacy);
   unverified whether a wipe re-enables it.
-- Desktop wiped: copy `dist/usbtether` (it is static and self-contained) and run `usbtether setup`.
-- Signing key: `~/work/tetrd-re/keys/usbtether.keystore` (= old build/debug.keystore). Lose it and updates need
-  `adb uninstall com.matt.usbtether` first. NOTE: cloud-backup's filter excludes `*.keystore`.
+- Desktop wiped: copy `dist/tethercell` (it is static and self-contained) and run `tethercell setup`.
+- Signing key: `~/work/tetrd-re/keys/tethercell.keystore` (= old build/debug.keystore). Lose it and updates need
+  `adb uninstall com.matt.tethercell` first. NOTE: cloud-backup's filter excludes `*.keystore`.
 - Phone screen: tap the launcher icon for status/counters/Stop; started by the PC it stays invisible.
 
-Own USB tether, original code. Desktop = `~/work/tetrd-re/clone/cmd/usbtether-host`, phone = this app
-(`com.matt.usbtether`). Wire format: bare IP datagrams over the AOA bulk endpoints (own AOA identity
-mxlab/usbtether v1; NOT Tetrd-compatible). Phone = exit node: gVisor netstack + TCP/UDP forwarders +
+Own USB tether, original code. Desktop = `~/work/tetrd-re/clone/cmd/tethercell-host`, phone = this app
+(`com.matt.tethercell`). Wire format: bare IP datagrams over the AOA bulk endpoints (own AOA identity
+mxlab/tethercell v1; NOT Tetrd-compatible). Phone = exit node: gVisor netstack + TCP/UDP forwarders +
 ICMP echo (unprivileged ICMP sockets), re-dialing from real Android sockets.
 
 ## Build
 ```bash
 export ANDROID_HOME=$HOME/work/tools/android-sdk ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.3.13750724
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 PATH=$PATH:$HOME/go/bin
-gomobile bind -target=android/arm64 -androidapi 29 -javapkg com.matt.usbtether -o build/core.aar ./core
-rm -rf build/aar && unzip -o -q build/core.aar -d build/aar && ./build-apk.sh && adb install -r build/usbtether.apk
+gomobile bind -target=android/arm64 -androidapi 29 -javapkg com.matt.tethercell -o build/core.aar ./core
+rm -rf build/aar && unzip -o -q build/core.aar -d build/aar && ./build-apk.sh && adb install -r build/tethercell.apk
 ```
-Host: `cd ~/work/tetrd-re/clone && go build -o bin/usbtether-host ./cmd/usbtether-host`
+Host: `cd ~/work/tetrd-re/clone && go build -o bin/tethercell-host ./cmd/tethercell-host`
 
 ## Everyday use (wrapper, auto-reconnect)
 ```bash
-usbtether-host -route -v6     # ~/.local/bin wrapper: sudo-gui, starts the phone app, logs to ~/work/tetrd-re/logs/host.log
+tethercell-host -route -v6     # ~/.local/bin wrapper: sudo-gui, starts the phone app, logs to ~/work/tetrd-re/logs/host.log
 ```
 - Watchdog: after 3 s with no reply the host pings 1.1.1.1 through the phone every 2 s. It declares the tunnel dead
   after 10 s with no valid packet back, or 6 s of stuck USB writes.
@@ -51,9 +51,9 @@ usbtether-host -route -v6     # ~/.local/bin wrapper: sudo-gui, starts the phone
 
 ## Run (phone unlocked/awake for the first attach)
 ```bash
-sudo ~/work/tetrd-re/clone/bin/usbtether-host -hostroute 1.1.1.1/32   # safe: one route
-sudo ~/work/tetrd-re/clone/bin/usbtether-host -route [-v6]            # default route (metric 50), wlan0 stays fallback
-# phone already in accessory mode (no replug):  add -reuse, then: adb shell am start -n com.matt.usbtether/.MainActivity
+sudo ~/work/tetrd-re/clone/bin/tethercell-host -hostroute 1.1.1.1/32   # safe: one route
+sudo ~/work/tetrd-re/clone/bin/tethercell-host -route [-v6]            # default route (metric 50), wlan0 stays fallback
+# phone already in accessory mode (no replug):  add -reuse, then: adb shell am start -n com.matt.tethercell/.MainActivity
 ```
 Host drops root after TUN/USB/routes exist (`-drop=false` to disable). Routes vanish when the host exits.
 

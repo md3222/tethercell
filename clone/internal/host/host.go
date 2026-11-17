@@ -1,6 +1,6 @@
-// Command usbtether-host is the desktop half of Matt's own USB tether: it
+// Command tethercell-host is the desktop half of Matt's own USB tether: it
 // switches the phone into Android Open Accessory mode with OUR identity
-// (mxlab/usbtether, not Tetrd's), creates a TUN, and moves bare IP datagrams
+// (mxlab/tethercell, not Tetrd's), creates a TUN, and moves bare IP datagrams
 // over USB bulk. Not Tetrd-protocol-compatible by design.
 //
 // Safety: no routes are installed unless asked. Default is bring-up only;
@@ -21,9 +21,9 @@ import (
 	"syscall"
 	"time"
 
-	"usbtether/internal/frame"
-	"usbtether/internal/tun"
-	"usbtether/internal/usbdev"
+	"tethercell/internal/frame"
+	"tethercell/internal/tun"
+	"tethercell/internal/usbdev"
 )
 
 const (
@@ -35,8 +35,8 @@ const (
 // Main runs the host with the given flags (os.Args[1:] style) and exits the process:
 // 0 = stopped, 3 = tunnel died after working, 4 = never delivered, 1 = start failed.
 func Main(args []string) {
-	fs := flag.NewFlagSet("usbtether run", flag.ExitOnError)
-	iface := fs.String("iface", "mxtun0", "TUN interface name")
+	fs := flag.NewFlagSet("tethercell run", flag.ExitOnError)
+	iface := fs.String("iface", "tcell0", "TUN interface name")
 	hostRoute := fs.String("hostroute", "", "install ONE route, e.g. 1.1.1.1/32, via the TUN")
 	route := fs.Bool("route", false, "install a default route via the TUN (metric 50: wins over wlan0)")
 	serial := fs.String("serial", "", "USB serial of the phone in normal mode")
@@ -52,14 +52,14 @@ func Main(args []string) {
 	urbs := fs.Int("urbs", 8, "bulk-IN reads kept queued (async usbfs URBs); 0 = old one-at-a-time BulkRead")
 	wait := fs.Duration("wait", 20*time.Second, "wait for the accessory to enumerate")
 	fs.Parse(args)
-	log.SetPrefix("usbtether-host: ")
+	log.SetPrefix("tethercell-host: ")
 	if *mtu < 576 || *mtu > defaultMTU {
 		log.Fatalf("-mtu %d out of range 576-%d (a transfer must fit the phone's 16384-byte read)", *mtu, defaultMTU)
 	}
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	if os.Geteuid() != 0 && !HasNetAdmin() {
-		log.Fatal("needs CAP_NET_ADMIN (run the installed /usr/local/bin/usbtether, see 'usbtether setup') or root")
+		log.Fatal("needs CAP_NET_ADMIN (run the installed /usr/local/bin/tethercell, see 'tethercell setup') or root")
 	}
 	reuseAcc = *reuse
 	dev, err := acquire(*serial, *wait)
@@ -84,15 +84,15 @@ func Main(args []string) {
 	}
 	defer td.Close()
 	// Keep NetworkManager's hands off (it stripped nothing proven, but never let it guess).
-	// If an NM profile "usbtether" (type tun) exists, hand the interface to NM *before* we add routes:
+	// If an NM profile "tethercell" (type tun) exists, hand the interface to NM *before* we add routes:
 	// NM then owns addresses + DNS (so DNS survives Wi-Fi going away) and reports "connected" (browsers
 	// stay online). Activation re-applies the device and wipes foreign routes, hence routes come last.
-	if out, err := sysCmd("nmcli", "-g", "connection.id", "con", "show", "usbtether").Output(); err == nil && len(out) > 0 {
+	if out, err := sysCmd("nmcli", "-g", "connection.id", "con", "show", "tethercell").Output(); err == nil && len(out) > 0 {
 		_ = sysCmd("nmcli", "dev", "set", td.Name, "managed", "yes").Run()
-		if o, err := sysCmd("nmcli", "con", "up", "usbtether", "ifname", td.Name).CombinedOutput(); err != nil {
-			log.Printf("nmcli con up usbtether: %v: %s (continuing without NM)", err, o)
+		if o, err := sysCmd("nmcli", "con", "up", "tethercell", "ifname", td.Name).CombinedOutput(); err != nil {
+			log.Printf("nmcli con up tethercell: %v: %s (continuing without NM)", err, o)
 		} else {
-			log.Printf("NetworkManager adopted %s (profile usbtether: DNS via tunnel)", td.Name)
+			log.Printf("NetworkManager adopted %s (profile tethercell: DNS via tunnel)", td.Name)
 		}
 	} else {
 		_ = sysCmd("nmcli", "dev", "set", td.Name, "managed", "no").Run()
@@ -454,7 +454,7 @@ func acquire(serial string, wait time.Duration) (*usbdev.Device, error) {
 	strs := []struct {
 		i uint16
 		s string
-	}{{5, "mx-host-1"}, {0, "mxlab"}, {1, "usbtether"}, {2, "mx usb tether"}, {3, "1"}, {4, "https://localhost/"}}
+	}{{5, "mx-host-1"}, {0, "mxlab"}, {1, "tethercell"}, {2, "tethercell usb tether"}, {3, "1"}, {4, "https://localhost/"}}
 	for _, s := range strs {
 		if err := d.SendString(s.i, s.s); err != nil {
 			d.Close()

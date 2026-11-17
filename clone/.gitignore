@@ -1,4 +1,4 @@
 bin/
-/cmd/usbtether/assets/usbtether.apk
-/cmd/usbtether/assets/apk_version.txt
+/cmd/tethercell/assets/tethercell.apk
+/cmd/tethercell/assets/apk_version.txt
 /dist/

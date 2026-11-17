@@ -1,4 +1,4 @@
-package com.matt.usbtether;
+package com.matt.tethercell;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -13,8 +13,8 @@ import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
 public class TunnelService extends Service {
-    private static final String TAG = "mxusbtether";
-    static final String ACTION_STOP = "com.matt.usbtether.STOP";
+    private static final String TAG = "tethercell";
+    static final String ACTION_STOP = "com.matt.tethercell.STOP";
     private volatile boolean stopping;
     private volatile Thread worker;
 
@@ -36,7 +36,7 @@ public class TunnelService extends Service {
             long t0 = System.currentTimeMillis();
             try {
                 Log.i(TAG, "tunnel starting");
-                com.matt.usbtether.core.Core.run(pfd.detachFd());
+                com.matt.tethercell.core.Core.run(pfd.detachFd());
             } catch (Exception e) { Log.e(TAG, "run failed", e); }
             long up = System.currentTimeMillis() - t0;
             Log.i(TAG, "tunnel ended after " + up + " ms");
@@ -54,7 +54,7 @@ public class TunnelService extends Service {
     private static UsbAccessory ours(UsbAccessory[] list) {
         if (list == null) return null;
         for (UsbAccessory a : list) {
-            if ("mxlab".equals(a.getManufacturer()) && "usbtether".equals(a.getModel())) return a;
+            if ("mxlab".equals(a.getManufacturer()) && "tethercell".equals(a.getModel())) return a;
         }
         return null;
     }
@@ -66,13 +66,13 @@ public class TunnelService extends Service {
     @Override public int onStartCommand(Intent i, int flags, int id) {
         if (i != null && ACTION_STOP.equals(i.getAction())) {
             stopping = true;
-            com.matt.usbtether.core.Core.stop();
+            com.matt.tethercell.core.Core.stop();
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
             return START_NOT_STICKY;
         }
         stopping = false;
-        NotificationChannel ch = new NotificationChannel("tun", "USB tether", NotificationManager.IMPORTANCE_LOW);
+        NotificationChannel ch = new NotificationChannel("tun", "TetherCell", NotificationManager.IMPORTANCE_LOW);
         getSystemService(NotificationManager.class).createNotificationChannel(ch);
         Notification n = new Notification.Builder(this, "tun")
             .setContentTitle("USB tether active")
@@ -103,7 +103,7 @@ public class TunnelService extends Service {
     }
 
     @Override public void onDestroy() {
-        com.matt.usbtether.core.Core.stop();
+        com.matt.tethercell.core.Core.stop();
         super.onDestroy();
     }
 }

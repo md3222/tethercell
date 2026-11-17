@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"usbtether/internal/tun"
+	"tethercell/internal/tun"
 )
 
 // SelfTest checks the unprivileged path without the phone and without routes: create a scratch
@@ -14,7 +14,7 @@ func SelfTest() error {
 		return fmt.Errorf("run as your user")
 	}
 	if !HasNetAdmin() {
-		return fmt.Errorf("no CAP_NET_ADMIN: run the installed binary (usbtether setup)")
+		return fmt.Errorf("no CAP_NET_ADMIN: run the installed binary (tethercell setup)")
 	}
 	td, err := tun.Open("mxselftest0")
 	if err != nil {
