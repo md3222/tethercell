@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.matt.tethercell"
-    android:versionCode="8" android:versionName="8.0">
+    android:versionCode="10" android:versionName="10.0">
 
     <uses-feature android:name="android.hardware.usb.accessory" android:required="true" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -23,6 +23,10 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
+                <!-- Without DEFAULT the framework cannot resolve this filter with
+                     MATCH_DEFAULT_ONLY, so accessoryAttached() grants no USB permission and
+                     openAccessory() throws SecurityException for ever. -->
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <meta-data android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
                 android:resource="@xml/accessory_filter" />

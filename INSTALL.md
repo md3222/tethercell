@@ -44,6 +44,11 @@ No adb? Copy `~/tethercell.apk` to the phone (USB file transfer), open it in Fil
 The app shows up as **TetherCell**. You do not have to open it: the desktop starts it when the
 cable is plugged in.
 
+**First attach:** the phone asks *"Open TetherCell to handle tethercell usb tether?"* — tick
+**Always open TetherCell** and tap **OK**. Android only grants the accessory permission through
+that dialog; without it every connect fails with `usb write timeout` (the app logs
+`openAccessory: no permission yet, retrying`). It is asked once per phone, not per connect.
+
 ## 3. First connect
 
 Replug the cable once (the udev rule is new), then:

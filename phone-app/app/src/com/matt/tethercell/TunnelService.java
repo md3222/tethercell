@@ -34,7 +34,17 @@ public class TunnelService extends Service {
                 continue;
             }
             ParcelFileDescriptor pfd;
-            try { pfd = um.openAccessory(acc); } catch (Exception e) { Log.e(TAG, "open", e); break; }
+            try {
+                pfd = um.openAccessory(acc);
+            } catch (SecurityException se) {
+                // The accessory is there but the attach intent (which carries the permission
+                // grant) has not been delivered yet. Retry inside the wait window instead of
+                // giving up: the grant lands a few hundred ms later.
+                Log.w(TAG, "openAccessory: no permission yet, retrying");
+                fast++;
+                sleep(400);
+                continue;
+            } catch (Exception e) { Log.e(TAG, "open", e); break; }
             if (pfd == null) { fast++; sleep(500); continue; }
             long t0 = System.currentTimeMillis();
             try {
