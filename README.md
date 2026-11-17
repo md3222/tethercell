@@ -22,9 +22,12 @@ Linux x86-64 for the desktop; Android 10+ for the phone; no root on either side.
 |---|---|
 | ![TetherCell GUI](docs/screenshots/gui.png) | ![TetherCell phone app](docs/screenshots/phone.png) |
 
-Eight palettes under **View**:
+Six of the eight palettes under **View** — real captures on a live `tcell0` link:
 
 ![Themes](docs/screenshots/themes.png)
+
+Individual shots: [`docs/screenshots/themes/`](docs/screenshots/themes) (Midnight, Amber CRT,
+Cyberpunk, Daylight, Nord, Matrix). Missing: Solarized and Rosé.
 
 
 | dir | what |
