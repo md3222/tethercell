@@ -35,6 +35,7 @@ INSTALLED = "/usr/local/bin/tethercell"
 REPO_DIST = os.path.expanduser("~/work/tethercell/dist/tethercell")
 CONFIG_DIR = os.path.expanduser("~/.config/tethercell")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
+LEGACY_IFACES = ("mxtun0",)   # pre-rename tunnels this GUI can replace
 
 DEFAULTS = {
     "iface": "tcell0",
@@ -199,6 +200,12 @@ class MainWindow(QMainWindow):
         self.tx_rate = 0.0
         self.phone_info = "—"
         self.probe_supported = self.detect_probe_flags()
+        self.binary_banner = None      # (text, button) for the binary/setup notice
+        self.banner_mode = "binary"    # or "replace"
+        self._banner_want = ("init",)
+        self._legacy_procs = ""
+        self._legacy_procs_at = 0.0
+        self._ticks = 0
 
         self.build_ui()
         self.apply_cfg()
@@ -279,7 +286,7 @@ class MainWindow(QMainWindow):
         b.addWidget(self.banner_text, 1)
         self.banner_btn = QPushButton("Install / update")
         self.banner_btn.setObjectName("ghost")
-        self.banner_btn.clicked.connect(self.install_update)
+        self.banner_btn.clicked.connect(self.banner_clicked)
         b.addWidget(self.banner_btn)
         self.banner.hide()
         v.addWidget(self.banner)
@@ -512,6 +519,9 @@ class MainWindow(QMainWindow):
         a = QAction("Show installed tethercell version", self)
         a.triggered.connect(self.show_versions)
         tools.addAction(a)
+        a = QAction("Replace old usbtether session…", self)
+        a.triggered.connect(self.replace_legacy)
+        tools.addAction(a)
         a = QAction("Stop external tunnel…", self)
         a.triggered.connect(self.stop_external)
         tools.addAction(a)
@@ -695,6 +705,13 @@ class MainWindow(QMainWindow):
                                 f"A tunnel is already up on {self.collect()['iface']}.\n\n"
                                 "Stop it first (Ctrl-C in its terminal, or Tools → Stop external tunnel).")
             return
+        legacy = self.legacy_iface()
+        if legacy or self.legacy_procs():
+            if QMessageBox.question(self, APP,
+                    f"The old usbtether session is still running ({legacy or 'supervisor only'}). "
+                    "Stop it and connect with TetherCell now?") == QMessageBox.Yes:
+                self.replace_legacy()
+            return
         self.save_from_widgets()
         args = self.build_args()
         self.log.clear()
@@ -777,6 +794,7 @@ class MainWindow(QMainWindow):
         iface = self.collect()["iface"]
         up = os.path.exists(f"/sys/class/net/{iface}")
         running = self.owned_running()
+        legacy = None if running else self.legacy_iface()
 
         if up:
             self.set_pill("LIVE" if running else "EXTERNAL", "ok")
@@ -786,6 +804,13 @@ class MainWindow(QMainWindow):
             self.st_route.setText(f"dev {r} metric 50" if r == iface else (f"dev {r}" if r else "none"))
             self.update_traffic(iface)
             self.st_session.setText(self.session_text(running))
+        elif legacy:
+            self.set_pill("EXTERNAL", "warn")
+            self.st_state.setText(f"old usbtether session on {legacy} (not TetherCell)")
+            self.st_iface.setText(f"{legacy}  {iface_addrs(legacy)}".strip())
+            self.st_route.setText(default_route_iface() or "none")
+            self.update_traffic(legacy)
+            self.st_session.setText("external process")
         else:
             if running:
                 self.set_pill("STARTING", "warn")
@@ -805,6 +830,8 @@ class MainWindow(QMainWindow):
                              "normal": f"normal · {detail} (replug flips it)",
                              "none": "not attached"}[mode])
         self.st_app.setText(self.phone_info)
+        self._ticks += 1
+        self.sync_banner()
 
     def update_traffic(self, iface):
         try:
@@ -842,6 +869,8 @@ class MainWindow(QMainWindow):
 
     def ping_tick(self):
         iface = self.collect()["iface"]
+        if not os.path.exists(f"/sys/class/net/{iface}"):
+            iface = self.legacy_iface() or iface
         if not os.path.exists(f"/sys/class/net/{iface}") or self.ping_proc:
             return
         self.ping_proc = QProcess(self)
@@ -891,10 +920,8 @@ class MainWindow(QMainWindow):
     def refresh_binary_banner(self):
         b = self.bin_path()
         if not b:
-            self.banner_text.setText("tethercell is not installed on this desktop. "
-                                    "Install it once: `tethercell setup`.")
-            self.banner_btn.setText("Install / update")
-            self.banner.show()
+            self.set_binary_banner("tethercell is not installed on this desktop. "
+                                   "Install it once: `tethercell setup`.", "Install / update")
             self.w_pa.setEnabled(False)
             self.w_pe.setEnabled(False)
             return
@@ -905,23 +932,101 @@ class MainWindow(QMainWindow):
         else:
             cap_ok = False
         if not os.path.exists(INSTALLED):
-            self.banner_text.setText(f"{INSTALLED} is missing; TetherCell is using {b}. "
-                                    "Install it once with the button.")
-            self.banner_btn.setText("Install / update")
-            self.banner.show()
+            self.set_binary_banner(f"{INSTALLED} is missing; TetherCell is using {b}. "
+                                   "Install it once with the button.", "Install / update")
         elif not self.probe_supported:
-            self.banner_text.setText("Installed build is older than this GUI (no -probe-after/-probe-every). "
-                                     "Install the 2026-11-16 build to enable the probe controls.")
-            self.banner_btn.setText("Install update")
-            self.banner.show()
+            self.set_binary_banner("Installed build is older than this GUI (no -probe-after/-probe-every). "
+                                   "Install the 2026-11-16 build to enable the probe controls.",
+                                   "Install update")
         elif not cap_ok:
-            self.banner_text.setText(f"{INSTALLED} is missing cap_net_admin: run `tethercell setup` once.")
-            self.banner_btn.setText("Run setup")
-            self.banner.show()
+            self.set_binary_banner(f"{INSTALLED} is missing cap_net_admin: run `tethercell setup` once.",
+                                   "Run setup")
         else:
-            self.banner.hide()
+            self.set_binary_banner(None)
         self.w_pa.setEnabled(self.probe_supported)
         self.w_pe.setEnabled(self.probe_supported)
+
+    # -- banner / legacy session ---------------------------------------------
+
+    def set_binary_banner(self, text, btn=None):
+        self.binary_banner = (text, btn) if text else None
+        self.sync_banner()
+
+    def banner_clicked(self):
+        if self.banner_mode == "replace":
+            self.replace_legacy()
+        else:
+            self.install_update()
+
+    def legacy_iface(self):
+        cur = self.collect()["iface"]
+        for name in LEGACY_IFACES:
+            if name != cur and os.path.exists(f"/sys/class/net/{name}"):
+                return name
+        return None
+
+    def legacy_procs(self, max_age=0.0):
+        now = time.time()
+        if max_age and now - self._legacy_procs_at < max_age:
+            return self._legacy_procs
+        rc, out = run(["pgrep", "-af", r"(usbtether|tethercell) (up|run)( |$)"], timeout=3)
+        self._legacy_procs = "\n".join(l for l in out.splitlines()
+                                       if "pgrep" not in l) if rc == 0 else ""
+        self._legacy_procs_at = now
+        return self._legacy_procs
+
+    def sync_banner(self):
+        legacy = None if self.owned_running() else self.legacy_iface()
+        if not legacy and not self.owned_running() and self.legacy_procs(max_age=5.0):
+            legacy = "mxtun0 (or its supervisor)" 
+        if legacy:
+            want = ("replace",
+                    f"The old usbtether session is still running on {legacy} and holds the phone's "
+                    "USB accessory, so TetherCell cannot connect. Replace it in one step: the uplink "
+                    "drops for a few seconds and comes back on tcell0.",
+                    "Replace with TetherCell")
+        elif self.binary_banner:
+            want = ("binary",) + self.binary_banner
+        else:
+            want = None
+        if want == self._banner_want:
+            return
+        self._banner_want = want
+        if not want:
+            self.banner.hide()
+            return
+        self.banner_mode, text, btn = want
+        self.banner_text.setText(text)
+        self.banner_btn.setText(btn)
+        self.banner.show()
+
+    def replace_legacy(self):
+        legacy = self.legacy_iface()
+        procs = self.legacy_procs()
+        procs = procs or self.legacy_procs()
+        if not legacy and not procs:
+            self.statusBar().showMessage("no old session found", 4000)
+            self.refresh_binary_banner()
+            return
+        detail = "\n".join(procs.splitlines()[:6]) or "(interface only, no matching process)"
+        if QMessageBox.question(
+                self, APP,
+                f"Stop the old session and start TetherCell?\n\n{detail}\n\n"
+                "The uplink drops for a few seconds while the phone re-enters accessory mode. "
+                "TetherCell restores the route when tcell0 is up.") != QMessageBox.Yes:
+            return
+        self.append_log(f"— stopping legacy session on {legacy or 'mxtun0'} —")
+        run(["pkill", "-TERM", "-f", r"usbtether (up|run)"], timeout=5)
+        run(["pkill", "-TERM", "-x", "usbtether"], timeout=5)
+        deadline = time.time() + 12
+        while time.time() < deadline and legacy and self.iface_exists(legacy):
+            QApplication.processEvents()
+            time.sleep(0.2)
+        self.refresh_binary_banner()
+        if self.iface_exists("tcell0"):
+            QMessageBox.warning(self, APP, "tcell0 is still up; not starting a second tunnel.")
+            return
+        self.connect_clicked()
 
     def install_update(self):
         b = REPO_DIST if os.path.exists(REPO_DIST) else self.bin_path()

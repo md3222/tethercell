@@ -96,6 +96,17 @@ Live panel: state (LIVE / EXTERNAL / STARTING / OFFLINE), interface addresses, p
 
 The "Command" box always shows the exact argv that Connect will run; **Copy** puts it on the clipboard.
 
+### 3.0 Replacing the old `usbtether` session
+
+If a tunnel started by the pre-rename build is still up (`mxtun0`), TetherCell shows an
+**EXTERNAL** pill and an amber banner with **Replace with TetherCell**. The same action is in
+**Tools ▸ Replace old usbtether session…**, and Connect offers it too.
+
+One click does: `pkill -TERM -f "usbtether (up|run)"` + `pkill -TERM -x usbtether`, waits up to
+12 s for `mxtun0` to disappear, then starts `tethercell up`. The uplink drops for those seconds
+and returns on `tcell0`; the phone re-enters AOA accessory mode by itself. Nothing happens
+without the confirmation dialog.
+
 ### 3.1 Themes
 
 View ▸ theme, applied live and remembered in `~/.config/tethercell/config.json`:
