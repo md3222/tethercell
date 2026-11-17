@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"embed"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -93,6 +94,8 @@ func main() {
 			"allow \"install unknown apps\" for Files when asked. Then plug in and run tethercell.\n", out, apkVersion())
 	case "status":
 		status()
+	case "chcap":
+		os.Exit(chcap(os.Args[2:]))
 	case "selftest":
 		if err := host.SelfTest(); err != nil {
 			fail("selftest: " + err.Error())
@@ -193,6 +196,12 @@ func up(hostArgs []string) int {
 			if fresh { // last session never came up: give the phone a fresh core too
 				adbRun("shell", "am", "force-stop", pkg)
 			}
+		}
+		if adb {
+			// Warm the app before the host sends AOA START. Without this the first session after
+			// an install raced the phone's cold start: the host pumped at once, every write timed
+			// out for 6 s and it gave up before the app had even opened the accessory.
+			adbRun("shell", "am", "start", "-n", activity)
 		}
 		helperDone := make(chan struct{})
 		if adb {
@@ -429,9 +438,6 @@ func setup() int {
 	if os.Geteuid() == 0 {
 		fail("run setup as your user; it asks for the password itself")
 	}
-	if _, err := exec.LookPath("setcap"); err != nil {
-		fail("setcap missing: sudo apt install libcap2-bin")
-	}
 	tmp, err := os.MkdirTemp("", "tethercell-setup-")
 	if err != nil {
 		fail(err.Error())
@@ -448,10 +454,10 @@ func setup() int {
 	_ = os.WriteFile(script, []byte(`#!/bin/sh
 set -e
 install -o root -g root -m 0755 "$1" `+installPath+`
-setcap cap_net_admin+ep `+installPath+`
+"$1" chcap `+installPath+`
 install -o root -g root -m 0644 "$2" `+udevPath+`
 udevadm control --reload-rules
-echo "installed: $(getcap `+installPath+`)"
+echo "installed: `+installPath+` cap_net_admin=ep"
 `), 0o755)
 	var esc []string
 	if p, err := exec.LookPath("sudo-gui"); err == nil {
@@ -469,7 +475,7 @@ echo "installed: $(getcap `+installPath+`)"
 	}
 	nmProfile()
 	launcher()
-	fmt.Print("\ntethercell: setup done. Connect with: tethercell   (or the \"USB Tether\" menu entry).\nFirst time on this desktop: replug the phone once so the new udev rule applies.\n")
+	fmt.Print("\ntethercell: setup done. Connect with: tethercell   (or the TetherCell menu entry).\nFirst time on this desktop: replug the phone once so the new udev rule applies.\n")
 	return 0
 }
 
@@ -534,13 +540,40 @@ Exec=`+term+` --hold -e `+installPath+` status
 	}
 }
 
+// hasFileCap reports whether path carries cap_net_admin in its file capability xattr.
+// Reading the xattr ourselves keeps setup/status working without libcap2-bin installed.
+func hasFileCap(path string) bool {
+	buf := make([]byte, 24)
+	n, err := syscall.Getxattr(path, "security.capability", buf)
+	if err != nil || n < 8 {
+		return false
+	}
+	return binary.LittleEndian.Uint32(buf[4:])&(1<<12) != 0 // CAP_NET_ADMIN
+}
+
+// chcap writes security.capability = cap_net_admin+ep. Run as root from setup, replacing setcap.
+func chcap(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: tethercell chcap /path/to/binary")
+		return 2
+	}
+	buf := make([]byte, 20) // struct vfs_cap_data, VFS_CAP_REVISION_2 | EFFECTIVE
+	binary.LittleEndian.PutUint32(buf[0:], 0x02000001)
+	binary.LittleEndian.PutUint32(buf[4:], 1<<12)
+	if err := syscall.Setxattr(args[0], "security.capability", buf, 0); err != nil {
+		fmt.Fprintln(os.Stderr, "tethercell: chcap:", err)
+		return 1
+	}
+	return 0
+}
+
 // ---------- status ----------
 
 func status() {
 	row := func(k, v string) { fmt.Printf("%-14s %s\n", k, v) }
 	row("binary", version+fmt.Sprintf(" (embedded app versionCode %d)", apkVersion()))
-	if out, err := exec.Command("getcap", installPath).Output(); err == nil && len(out) > 0 {
-		row("installed", strings.TrimSpace(string(out)))
+	if fileExists(installPath) && hasFileCap(installPath) {
+		row("installed", installPath+" cap_net_admin=ep")
 	} else if fileExists(installPath) {
 		row("installed", installPath+" WITHOUT cap_net_admin: run tethercell setup")
 	} else {

@@ -22,11 +22,14 @@ public class TunnelService extends Service {
     // first reads may fail with EIO. Keep re-opening the accessory until it sticks.
     private void loop() {
         UsbManager um = getSystemService(UsbManager.class);
+        // The desktop pre-launches this service before it sends AOA START; the phone needs up to
+        // ~10 s to re-enumerate as the accessory, and the very first launch after an install is
+        // slower still (ART verifying). Wait 20 s, not 3 s, so the service is there when it appears.
         int fast = 0;
-        while (fast < 20 && !stopping) {
+        while (fast < 60 && !stopping) {
             UsbAccessory acc = ours(um.getAccessoryList());
             if (acc == null) {
-                if (++fast > 6) break;
+                if (++fast > 40) break;
                 sleep(500);
                 continue;
             }

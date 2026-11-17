@@ -104,6 +104,20 @@ def access_usb_mode():
     return "none", "not attached"
 
 
+def file_cap_net_admin(path):
+    """True when path carries CAP_NET_ADMIN (bit 12) in security.capability.
+
+    Read the xattr directly: shelling out to getcap would make the GUI depend on
+    libcap2-bin, which is exactly what it used to complain about."""
+    try:
+        raw = os.getxattr(path, "security.capability")
+    except OSError:
+        return False
+    if len(raw) < 8:
+        return False
+    return bool(int.from_bytes(raw[4:8], "little") & (1 << 12))
+
+
 def iface_addrs(iface):
     rc, out = run(["ip", "-j", "addr", "show", "dev", iface], timeout=2)
     if rc == 0:
@@ -925,12 +939,7 @@ class MainWindow(QMainWindow):
             self.w_pa.setEnabled(False)
             self.w_pe.setEnabled(False)
             return
-        cap_ok = True
-        if os.path.exists(INSTALLED):
-            rc, out = run(["getcap", INSTALLED], timeout=3)
-            cap_ok = "cap_net_admin" in out
-        else:
-            cap_ok = False
+        cap_ok = os.path.exists(INSTALLED) and file_cap_net_admin(INSTALLED)
         if not os.path.exists(INSTALLED):
             self.set_binary_banner(f"{INSTALLED} is missing; TetherCell is using {b}. "
                                    "Install it once with the button.", "Install / update")
@@ -939,8 +948,8 @@ class MainWindow(QMainWindow):
                                    "Install the 2026-11-16 build to enable the probe controls.",
                                    "Install update")
         elif not cap_ok:
-            self.set_binary_banner(f"{INSTALLED} is missing cap_net_admin: run `tethercell setup` once.",
-                                   "Run setup")
+            self.set_binary_banner(f"{INSTALLED} has no cap_net_admin yet. One setup run fixes it "
+                                   "(no extra packages needed).", "Run setup")
         else:
             self.set_binary_banner(None)
         self.w_pa.setEnabled(self.probe_supported)
@@ -1044,10 +1053,13 @@ class MainWindow(QMainWindow):
         p.readyReadStandardOutput.connect(
             lambda: out.append(bytes(p.readAllStandardOutput()).decode("utf-8", "replace")))
 
-        def done(*_):
-            self.append_log("".join(out).strip())
+        def done(rc, _status):
+            text = "".join(out).strip()
+            self.append_log(text)
             self.probe_supported = self.detect_probe_flags()
             self.refresh_binary_banner()
+            if rc != 0:
+                QMessageBox.warning(self, APP, "setup failed:\n\n" + (text[-1200:] or f"exit {rc}"))
 
         p.finished.connect(done)
         p.start(b, ["setup"])

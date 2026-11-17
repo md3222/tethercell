@@ -1,6 +1,6 @@
 # TetherCell — command & settings reference
 
-**GUI** `tethercell` (TetherCell) · **host** `tethercell` 20261116-6e00451-dirty · **phone app** `com.matt.tethercell` versionCode 7 · 16 Nov 2026
+**GUI** `tethercell` (TetherCell) · **host** `tethercell` 20261117-e883132-dirty · **phone app** `com.matt.tethercell` versionCode 8 · 16 Nov 2026
 
 ---
 
