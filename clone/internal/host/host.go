@@ -44,6 +44,8 @@ func Main(args []string) {
 	v6 := fs.Bool("v6", false, "also give the TUN a ULA IPv6 address (and a v6 default route with -route)")
 	deadAfter := fs.Duration("dead-after", 10*time.Second, "declare the tunnel dead if data was sent and no valid packet came back for this long")
 	wedgeAfter := fs.Duration("wedge-after", 6*time.Second, "declare the tunnel dead if every USB write has timed out for this long")
+	probeAfter := fs.Duration("probe-after", 3*time.Second, "after the link has been silent this long, ask the phone with an ICMP echo")
+	probeEvery := fs.Duration("probe-every", 2*time.Second, "minimum gap between those ICMP probes (0 = never probe)")
 	clearHalt := fs.Bool("clear-halt", true, "CLEAR_HALT both bulk endpoints on attach (resets data toggles)")
 	reuse := fs.Bool("reuse", false, "attach to a phone already in accessory mode (our identity) instead of requiring a replug")
 	mtu := fs.Int("mtu", defaultMTU, "TUN MTU (576-16000); 1400 = pre-v3 packet sizes both ways, the phone follows the host's MSS")
@@ -173,7 +175,7 @@ func Main(args []string) {
 				// A pure ACK never gets a reply, so silence alone proves nothing: after 3 s, ask the
 				// phone directly. Its pingV4 answers this echo; the reply counts as a valid packet and
 				// the kernel drops the unsolicited echo reply.
-				if pending > 3*time.Second && time.Since(lastProbe) >= 2*time.Second {
+				if *probeEvery > 0 && pending > *probeAfter && time.Since(lastProbe) >= *probeEvery {
 					lastProbe = time.Now()
 					probeSeq++
 					select {

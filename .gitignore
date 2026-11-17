@@ -7,3 +7,5 @@
 *.aar
 build/
 /kit/
+__pycache__/
+docs/*.html
