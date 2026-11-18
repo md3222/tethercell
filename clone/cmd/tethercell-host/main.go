@@ -1,5 +1,7 @@
 // Command tethercell-host is the bare host (no supervisor); see internal/host.
 // Everyday use is cmd/tethercell, which wraps this with reconnects and phone setup.
+//go:build linux
+
 package main
 
 import (

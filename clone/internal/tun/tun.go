@@ -1,6 +1,8 @@
 // Package tun creates and configures a Linux TUN device without cgo, using
 // the /dev/net/tun ioctl, and configures addresses/routes via the ip(8)
 // argv interface (never a shell).
+//go:build linux
+
 package tun
 
 import (

@@ -11,6 +11,8 @@
 //
 // The phone APK is embedded at build time (dist.sh), so this one file restores both halves.
 // No root process: the installed binary carries cap_net_admin and drops it after bring-up.
+//go:build linux
+
 package main
 
 import (

@@ -38,6 +38,7 @@ Cyberpunk, Daylight, Nord, Matrix). Missing: Solarized and Rosé.
 | `docs/` | TetherCell reference — markdown + PDF (`build-pdf.py` regenerates it) |
 | `dist.sh` | builds APK + desktop binary (APK embedded) into `dist/` |
 | `release/` | `install.sh` for the published release |
+| `build-windows.sh` | cross-compiles `dist/tethercell.exe` from Linux (skeleton: CLI + APK, transport pending) |
 
 Build: `./dist.sh` (or `--skip-apk`). Install: `dist/tethercell setup` (one password popup), then `tethercell`.
 Signing key: `keys/tethercell.keystore` (NOT in git; back it up separately, a new key forces an app uninstall).

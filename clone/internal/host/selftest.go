@@ -1,3 +1,6 @@
+
+//go:build linux
+
 package host
 
 import (

@@ -5,6 +5,8 @@
 //
 // Safety: no routes are installed unless asked. Default is bring-up only;
 // use -hostroute <ip>/32 for a one-destination test, -route for a default route.
+//go:build linux
+
 package host
 
 import (

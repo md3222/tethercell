@@ -1,6 +1,8 @@
 // Package usbdev talks to USB devices through Linux usbfs, without libusb or
 // cgo. It implements just what the Tetrd AOA handshake and the accessory bulk
 // pipe need.
+//go:build linux
+
 package usbdev
 
 import (
